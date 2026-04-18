@@ -1,0 +1,106 @@
+type UserProfile = 
+ record {
+   contactNumber: text;
+   name: text;
+   role: text;
+ };
+type TeacherId = text;
+type Teacher = 
+ record {
+   createdAt: int;
+   id: TeacherId;
+   mobileNumber: text;
+   name: text;
+ };
+type StudentId = text;
+type Student = 
+ record {
+   assignedTeacherId: TeacherId;
+   className: ClassName;
+   createdAt: int;
+   fatherName: text;
+   feesStatus: FeesStatus;
+   id: StudentId;
+   mobileNumber: text;
+   monthlyFees: nat;
+   name: text;
+   timing: text;
+ };
+type FeesStatus = 
+ variant {
+   active;
+   cancelled;
+   pending;
+ };
+type FeesPaymentStatus = 
+ variant {
+   overdue;
+   paid;
+   partial_payment;
+   pending;
+ };
+type FeeRecordId = text;
+type FeeRecord = 
+ record {
+   amount: nat;
+   createdAt: int;
+   id: FeeRecordId;
+   month: text;
+   status: FeesPaymentStatus;
+   studentId: StudentId;
+ };
+type ClassName = text;
+type AttendanceStatus = 
+ variant {
+   absent;
+   late;
+   on_leave;
+   present;
+ };
+type AttendanceId = text;
+type Attendance = 
+ record {
+   createdAt: int;
+   date: text;
+   id: AttendanceId;
+   markedBy: text;
+   status: AttendanceStatus;
+   studentId: StudentId;
+ };
+type AcademicRecordId = text;
+type AcademicRecord = 
+ record {
+   akhlaqRating: nat;
+   currentSabak: text;
+   id: AcademicRecordId;
+   monthlyProgress: text;
+   previousSabak: text;
+   studentId: StudentId;
+   updatedAt: int;
+ };
+service : {
+  addFeeRecord: (feeRecord: FeeRecord) -> ();
+  addStudent: (student: Student) -> ();
+  addTeacher: (teacher: Teacher) -> ();
+  deleteStudent: (id: StudentId) -> ();
+  deleteTeacher: (id: TeacherId) -> ();
+  getAcademicRecord: (studentId: StudentId) -> (AcademicRecord) query;
+  getAllStudents: () -> (vec Student) query;
+  getAllTeachers: () -> (vec Teacher) query;
+  getCallerUserProfile: () -> (opt UserProfile) query;
+  getMonthlyAttendance: (studentId: StudentId, month: text) ->
+   (vec Attendance) query;
+  getStudent: (id: StudentId) -> (Student) query;
+  getStudentAttendance: (studentId: StudentId) -> (vec Attendance) query;
+  getStudentFees: (studentId: StudentId) -> (vec FeeRecord) query;
+  getStudentsByClass: (className: ClassName) -> (vec Student) query;
+  getStudentsByTeacher: (teacherId: TeacherId) -> (vec Student) query;
+  getTeacher: (id: TeacherId) -> (Teacher) query;
+  getUserProfile: (user: principal) -> (opt UserProfile) query;
+  markAttendance: (attendanceRecord: Attendance) -> ();
+  saveCallerUserProfile: (profile: UserProfile) -> ();
+  updateAcademicRecord: ("record": AcademicRecord) -> ();
+  updateFeeStatus: (id: FeeRecordId, status: FeesPaymentStatus) -> ();
+  updateStudent: (id: StudentId, student: Student) -> ();
+  updateTeacher: (id: TeacherId, teacher: Teacher) -> ();
+}

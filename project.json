@@ -1,0 +1,26 @@
+{
+  "overview": "A fully functional Madrasa Management System with role-based login for Admin, Teacher (Ustaad), and Parent. Features attendance tracking with WhatsApp alerts, fee management with reminders, Sabak progress tracking, notices, gallery, and parent contact system — all powered by local storage for instant persistence.",
+  "features": [
+    "Role-based login: Admin (full access), Teacher (class-scoped), Parent (mobile number, read-only)",
+    "Student-parent linking via mobile number",
+    "Attendance marking with WhatsApp alert simulation for absent students",
+    "Monthly fee tracking with Paid/Pending status and WhatsApp reminder button",
+    "Sabak/Quran progress tracking with lesson name, progress %, and remarks",
+    "Notice board: Admin creates notices, all users read; WhatsApp share button",
+    "Gallery: Admin uploads (UI), all users view in grid layout",
+    "Parent contact system with Call and WhatsApp buttons",
+    "All data persists in localStorage — no reset on refresh",
+    "Sidebar text visibility fix and dropdown z-index fix"
+  ],
+  "category": "education",
+  "tags": [
+    "madrasa",
+    "school-management",
+    "education",
+    "islamic",
+    "attendance",
+    "fees",
+    "dashboard"
+  ],
+  "last_updated": "2026-04-17T10:26:19.416Z"
+}

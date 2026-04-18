@@ -1,0 +1,103 @@
+// Version: 1.0.0
+type AcademicRecordId__69121024 = Text;
+type AcademicRecord__62398281 =
+  {
+    akhlaqRating : Nat;
+    currentSabak : Text;
+    id : AcademicRecordId__69121024;
+    monthlyProgress : Text;
+    previousSabak : Text;
+    studentId : StudentId__449615776;
+    updatedAt : Int
+  };
+type AttendanceId__22249911 = Text;
+type AttendanceStatus__244828072 = {#absent; #late; #on_leave; #present};
+type Attendance__674725553 =
+  {
+    createdAt : Int;
+    date : Text;
+    id : AttendanceId__22249911;
+    markedBy : Text;
+    status : AttendanceStatus__244828072;
+    studentId : StudentId__449615776
+  };
+type ClassName__91276542 = Text;
+type Data__791452850<K, V> =
+  {var count : Nat__490723111; kvs : [var ?(K, V)]};
+type FeeRecordId__239045989 = Text;
+type FeeRecord__447821764 =
+  {
+    amount : Nat;
+    createdAt : Int;
+    id : FeeRecordId__239045989;
+    month : Text;
+    status : FeesPaymentStatus__1035445238;
+    studentId : StudentId__449615776
+  };
+type FeesPaymentStatus__1035445238 =
+  {#overdue; #paid; #partial_payment; #pending};
+type FeesStatus__389640713 = {#active; #cancelled; #pending};
+type Internal__8484328<K, V> =
+  {children : [var ?Node__46230540<K, V>]; data : Data__791452850<K, V>};
+type Leaf__809889148<K, V> = {data : Data__791452850<K, V>};
+type Nat__490723111 = Nat__920180692;
+type Nat__920180692 = Nat;
+type Node__46230540<K, V> =
+  {#internal : Internal__8484328<K, V>; #leaf : Leaf__809889148<K, V>};
+type StudentId__449615776 = Text;
+type Student__975845730 =
+  {
+    assignedTeacherId : TeacherId__147005830;
+    className : ClassName__91276542;
+    createdAt : Int;
+    fatherName : Text;
+    feesStatus : FeesStatus__389640713;
+    id : StudentId__449615776;
+    mobileNumber : Text;
+    monthlyFees : Nat;
+    name : Text;
+    timing : Text
+  };
+type TeacherId__147005830 = Text;
+type Teacher__842879450 =
+  {
+    createdAt : Int;
+    id : TeacherId__147005830;
+    mobileNumber : Text;
+    name : Text
+  };
+type UserProfile__491224006 =
+  {contactNumber : Text; name : Text; role : Text};
+actor {
+  stable academicRecords :
+    {
+      var root :
+        Node__46230540<AcademicRecordId__69121024, AcademicRecord__62398281>;
+      var size : Nat__490723111
+    };
+  stable attendance :
+    {
+      var root : Node__46230540<AttendanceId__22249911, Attendance__674725553>;
+      var size : Nat__490723111
+    };
+  stable feeRecords :
+    {
+      var root : Node__46230540<FeeRecordId__239045989, FeeRecord__447821764>;
+      var size : Nat__490723111
+    };
+  stable students :
+    {
+      var root : Node__46230540<StudentId__449615776, Student__975845730>;
+      var size : Nat__490723111
+    };
+  stable teachers :
+    {
+      var root : Node__46230540<TeacherId__147005830, Teacher__842879450>;
+      var size : Nat__490723111
+    };
+  stable userProfiles :
+    {
+      var root : Node__46230540<Principal, UserProfile__491224006>;
+      var size : Nat__490723111
+    }
+};
