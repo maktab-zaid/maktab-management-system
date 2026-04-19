@@ -21,20 +21,28 @@ import {
   type Session,
   type Student,
   type Teacher,
+  addActivityLogEntry,
   createId,
   getStudents,
   getTeachers,
   saveStudents,
 } from "@/lib/storage";
+import type { AppPage } from "@/types/dashboard";
+import { STUDENT_CLASS_OPTIONS } from "@/types/index";
 import {
+  ArrowLeft,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Eye,
   Filter,
+  MessageCircle,
+  Moon,
   Pencil,
   Phone,
   Plus,
   Search,
+  Sun,
   Trash2,
   UserCircle2,
   Users,
@@ -44,56 +52,122 @@ import { toast } from "sonner";
 
 export interface StudentsPageProps {
   session: Session;
+  onNavigate?: (page: AppPage) => void;
 }
 
 const PAGE_SIZE = 10;
+
+// No hardcoded teacher names — all teachers come from Admin-managed storage.
+
+const SESSION_LIST = ["Morning", "Afternoon", "Evening"] as const;
+type SessionType = (typeof SESSION_LIST)[number];
 
 const defaultForm = {
   name: "",
   fatherName: "",
   parentMobile: "",
-  className: "",
+  timeSlot: "" as SessionType | "",
   teacherName: "",
+  address: "",
+  rollNumber: "",
+  admissionDate: "",
   fees: "1000",
   feesStatus: "pending" as "paid" | "pending",
+  studentClass: "",
 };
 
 type FormState = typeof defaultForm;
 
-export default function StudentsPage({ session }: StudentsPageProps) {
+function sessionLabel(slot: string | undefined): string {
+  if (!slot) return "—";
+  return slot.charAt(0).toUpperCase() + slot.slice(1);
+}
+
+function SessionBadge({ slot }: { slot?: string }) {
+  if (!slot) return <span className="text-muted-foreground text-xs">—</span>;
+  const lower = slot.toLowerCase();
+  if (lower === "morning")
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-yellow-50 border border-yellow-200 text-yellow-700 text-xs font-medium dark:bg-yellow-950/20 dark:border-yellow-800 dark:text-yellow-400">
+        <Sun className="w-3 h-3" />
+        Morning
+      </span>
+    );
+  if (lower === "afternoon")
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-orange-50 border border-orange-200 text-orange-700 text-xs font-medium dark:bg-orange-950/20 dark:border-orange-800 dark:text-orange-400">
+        <Clock className="w-3 h-3" />
+        Afternoon
+      </span>
+    );
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-medium dark:bg-indigo-950/20 dark:border-indigo-800 dark:text-indigo-400">
+      <Moon className="w-3 h-3" />
+      Evening
+    </span>
+  );
+}
+
+// Resolve teachers for a given session from storage only (no hardcoded fallback)
+function getUstaadsForSession(
+  teachers: Teacher[],
+  session: SessionType | "",
+): string[] {
+  if (!session) return [];
+  return teachers
+    .filter((t) => {
+      const ts = t.timeSlot ?? "";
+      const tsStr = Array.isArray(ts) ? ts.join(",") : ts;
+      return tsStr.toLowerCase().includes(session.toLowerCase());
+    })
+    .map((t) => t.name);
+}
+
+export default function StudentsPage({
+  session,
+  onNavigate,
+}: StudentsPageProps) {
   const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [search, setSearch] = useState("");
-  const [classFilter, setClassFilter] = useState("All Classes");
+  const [sessionFilter, setSessionFilter] = useState<string>("All Sessions");
   const [page, setPage] = useState(1);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editTarget, setEditTarget] = useState<Student | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const [form, setForm] = useState<FormState>(defaultForm);
   const [editForm, setEditForm] = useState<FormState>(defaultForm);
+  const [addedStudentWa, setAddedStudentWa] = useState<{
+    name: string;
+    mobile: string;
+    timeSlot: string;
+  } | null>(null);
 
-  // Load from localStorage on mount
   useEffect(() => {
     setAllStudents(getStudents());
     setTeachers(getTeachers());
   }, []);
 
+  const isAdmin = session.role === "admin";
+  const isTeacher = session.role === "teacher";
+  const canManage = isAdmin || isTeacher;
+
   // Role-scoped student list
   const scopedStudents =
-    session.role === "teacher"
-      ? allStudents.filter((s) => s.className === session.teacherClass)
-      : session.role === "parent"
-        ? allStudents.filter((s) => s.parentMobile === session.mobile)
+    session.role === "parent"
+      ? allStudents.filter((s) => s.parentMobile === session.mobile)
+      : isTeacher && session.teacherTimeSlot
+        ? allStudents.filter(
+            (s) =>
+              s.timeSlot?.toLowerCase() ===
+              session.teacherTimeSlot?.toLowerCase(),
+          )
         : allStudents;
 
-  // Class options derived from teachers
-  const classOptions = teachers.map((t) => t.className);
-  const allClassFilters = ["All Classes", ...Array.from(new Set(classOptions))];
-
-  // Resolve teacher name from class selection
-  const resolveTeacher = (className: string): string => {
-    return teachers.find((t) => t.className === className)?.name ?? "";
-  };
+  const allSessionFilters = ["All Sessions", ...SESSION_LIST] as const;
 
   // Filtered list
   const filtered = scopedStudents.filter((s) => {
@@ -102,9 +176,10 @@ export default function StudentsPage({ session }: StudentsPageProps) {
       s.name.toLowerCase().includes(q) ||
       s.fatherName.toLowerCase().includes(q) ||
       s.parentMobile.includes(q);
-    const matchClass =
-      classFilter === "All Classes" || s.className === classFilter;
-    return matchSearch && matchClass;
+    const matchSession =
+      sessionFilter === "All Sessions" ||
+      (s.timeSlot ?? "").toLowerCase() === sessionFilter.toLowerCase();
+    return matchSearch && matchSession;
   });
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
@@ -117,37 +192,62 @@ export default function StudentsPage({ session }: StudentsPageProps) {
     (s) => s.feesStatus === "pending",
   ).length;
 
-  // ─── Handlers ───────────────────────────────────────────────────────────────
+  // Ustaads available for the form's currently selected session
+  const addFormUstaads = getUstaadsForSession(
+    teachers,
+    form.timeSlot as SessionType | "",
+  );
+  const editFormUstaads = getUstaadsForSession(
+    teachers,
+    editForm.timeSlot as SessionType | "",
+  );
 
-  const handleSearchChange = (v: string) => {
-    setSearch(v);
-    setPage(1);
-  };
-
-  const handleClassChange = (v: string) => {
-    setClassFilter(v);
-    setPage(1);
-  };
+  // ─── Handlers ──────────────────────────────────────────────────────────────
 
   const handleAdd = () => {
-    if (!form.name.trim() || !form.className || !form.teacherName) return;
+    if (!form.name.trim() || !form.timeSlot) return;
     const newStudent: Student = {
       id: createId(),
       name: form.name.trim(),
       fatherName: form.fatherName.trim(),
       parentMobile: form.parentMobile.trim(),
-      className: form.className,
+      className: form.timeSlot,
       teacherName: form.teacherName,
       fees: Number(form.fees) || 0,
       feesStatus: form.feesStatus,
+      timeSlot: form.timeSlot.toLowerCase() as
+        | "morning"
+        | "afternoon"
+        | "evening",
+      address: form.address.trim(),
+      rollNumber: form.rollNumber.trim(),
+      admissionDate: form.admissionDate,
+      studentClass: form.studentClass,
     };
     const updated = [newStudent, ...allStudents];
     saveStudents(updated);
     setAllStudents(updated);
+
+    // Activity log
+    const actor = isTeacher ? session.name : "Admin";
+    addActivityLogEntry({
+      actorName: actor,
+      actorRole: isTeacher ? "ustaad" : "admin",
+      action: "added_student",
+      targetStudentName: newStudent.name,
+      details: `Session: ${form.timeSlot}`,
+    });
+
     setForm(defaultForm);
     setShowAddModal(false);
     setPage(1);
     toast.success(`${newStudent.name} added successfully`);
+    // Show WhatsApp notification option
+    setAddedStudentWa({
+      name: newStudent.name,
+      mobile: newStudent.parentMobile,
+      timeSlot: form.timeSlot,
+    });
   };
 
   const handleEditOpen = (student: Student) => {
@@ -156,10 +256,14 @@ export default function StudentsPage({ session }: StudentsPageProps) {
       name: student.name,
       fatherName: student.fatherName,
       parentMobile: student.parentMobile,
-      className: student.className,
+      timeSlot: (sessionLabel(student.timeSlot) as SessionType) || "",
       teacherName: student.teacherName,
+      address: student.address ?? "",
+      rollNumber: student.rollNumber ?? "",
+      admissionDate: student.admissionDate ?? "",
       fees: String(student.fees),
       feesStatus: student.feesStatus,
+      studentClass: student.studentClass ?? "",
     });
   };
 
@@ -172,33 +276,63 @@ export default function StudentsPage({ session }: StudentsPageProps) {
             name: editForm.name.trim(),
             fatherName: editForm.fatherName.trim(),
             parentMobile: editForm.parentMobile.trim(),
-            className: editForm.className,
+            className: editForm.timeSlot,
             teacherName: editForm.teacherName,
             fees: Number(editForm.fees) || 0,
             feesStatus: editForm.feesStatus,
+            timeSlot: (editForm.timeSlot
+              ? editForm.timeSlot.toLowerCase()
+              : s.timeSlot) as string,
+            address: editForm.address.trim(),
+            rollNumber: editForm.rollNumber.trim(),
+            admissionDate: editForm.admissionDate,
+            studentClass: editForm.studentClass,
           }
         : s,
     );
     saveStudents(updated);
     setAllStudents(updated);
     setEditTarget(null);
+    addActivityLogEntry({
+      actorName: isTeacher ? session.name : "Admin",
+      actorRole: isTeacher ? "ustaad" : "admin",
+      action: "updated_student",
+      targetStudentName: editForm.name.trim(),
+    });
     toast.success("Student updated successfully");
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = (id: string, name: string) => {
     const updated = allStudents.filter((s) => s.id !== id);
     saveStudents(updated);
     setAllStudents(updated);
     setDeleteTarget(null);
+    addActivityLogEntry({
+      actorName: isTeacher ? session.name : "Admin",
+      actorRole: isTeacher ? "ustaad" : "admin",
+      action: "removed_student",
+      targetStudentName: name,
+    });
     toast.success("Student removed");
   };
-
-  const isAdmin = session.role === "admin";
 
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-5 page-enter" data-ocid="students.page">
+      {/* Back button */}
+      {onNavigate && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onNavigate("dashboard")}
+          className="gap-1.5 text-muted-foreground hover:text-foreground"
+          data-ocid="students.back_button"
+        >
+          <ArrowLeft className="w-4 h-4" /> Back to Dashboard
+        </Button>
+      )}
+
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -211,14 +345,14 @@ export default function StudentsPage({ session }: StudentsPageProps) {
             </h1>
             <p className="text-sm text-muted-foreground mt-0.5">
               {session.role === "teacher"
-                ? `${session.teacherClass} — your class`
+                ? `${sessionLabel(session.teacherTimeSlot)} session — your students`
                 : session.role === "parent"
                   ? "Your child's profile"
                   : "Manage all enrolled students"}
             </p>
           </div>
         </div>
-        {isAdmin && (
+        {canManage && (
           <Button
             type="button"
             className="btn-gold gap-2 flex-shrink-0 font-semibold shadow-sm"
@@ -232,6 +366,46 @@ export default function StudentsPage({ session }: StudentsPageProps) {
       </div>
 
       {/* Stats row */}
+      {/* WhatsApp notification after student add */}
+      {addedStudentWa && (
+        <div
+          className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#25D366]/10 border border-[#25D366]/30"
+          data-ocid="students.add_whatsapp_notification"
+        >
+          <MessageCircle className="w-5 h-5 text-[#25D366] flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-foreground">
+              {addedStudentWa.name} added
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Notify parent via WhatsApp?
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <a
+              href={`https://wa.me/91${addedStudentWa.mobile}?text=${encodeURIComponent(`Assalamualaikum, ${addedStudentWa.name} ka Maktab Zaid Bin Sabit mein daakhila ho gaya. Session: ${addedStudentWa.timeSlot}. - Maktab Zaid Bin Sabit`)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-ocid="students.add_whatsapp_button"
+              className="px-3 py-1.5 text-xs font-semibold rounded-lg text-white flex items-center gap-1.5 hover:opacity-90 transition-opacity"
+              style={{ background: "#25D366" }}
+            >
+              <MessageCircle className="w-3.5 h-3.5" />
+              Send
+            </a>
+            <button
+              type="button"
+              onClick={() => setAddedStudentWa(null)}
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors text-xs"
+              aria-label="Dismiss"
+              data-ocid="students.add_whatsapp_dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-3">
         <div className="card-base rounded-xl px-4 py-3 flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
@@ -277,24 +451,33 @@ export default function StudentsPage({ session }: StudentsPageProps) {
             placeholder="Search by name, father name, or mobile..."
             className="pl-9 h-10 border-border/70 focus:border-primary/50 transition-colors duration-200"
             value={search}
-            onChange={(e) => handleSearchChange(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
             data-ocid="students.search_input"
           />
         </div>
         {session.role !== "parent" && (
           <div className="relative">
             <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none z-10" />
-            <Select value={classFilter} onValueChange={handleClassChange}>
+            <Select
+              value={sessionFilter}
+              onValueChange={(v) => {
+                setSessionFilter(v);
+                setPage(1);
+              }}
+            >
               <SelectTrigger
                 className="w-44 pl-8 h-10 border-border/70"
-                data-ocid="students.class_filter.select"
+                data-ocid="students.session_filter.select"
               >
-                <SelectValue placeholder="All Classes" />
+                <SelectValue placeholder="All Sessions" />
               </SelectTrigger>
               <SelectContent>
-                {allClassFilters.map((c) => (
-                  <SelectItem key={c} value={c}>
-                    {c}
+                {allSessionFilters.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {s}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -358,6 +541,9 @@ export default function StudentsPage({ session }: StudentsPageProps) {
                   Mobile
                 </th>
                 <th className="px-4 py-3 text-left font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden md:table-cell">
+                  Session
+                </th>
+                <th className="px-4 py-3 text-left font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden lg:table-cell">
                   Class
                 </th>
                 <th className="px-4 py-3 text-left font-semibold text-muted-foreground text-xs uppercase tracking-wide hidden lg:table-cell">
@@ -366,7 +552,7 @@ export default function StudentsPage({ session }: StudentsPageProps) {
                 <th className="px-4 py-3 text-center font-semibold text-muted-foreground text-xs uppercase tracking-wide">
                   Fees
                 </th>
-                {isAdmin && (
+                {canManage && (
                   <th className="px-4 py-3 text-center font-semibold text-muted-foreground text-xs uppercase tracking-wide">
                     Actions
                   </th>
@@ -377,7 +563,7 @@ export default function StudentsPage({ session }: StudentsPageProps) {
               {paginated.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={isAdmin ? 8 : 7}
+                    colSpan={canManage ? 9 : 8}
                     className="px-4 py-16 text-center"
                     data-ocid="students.empty_state"
                   >
@@ -390,20 +576,20 @@ export default function StudentsPage({ session }: StudentsPageProps) {
                           No students found
                         </p>
                         <p className="text-xs text-muted-foreground mt-1">
-                          {search || classFilter !== "All Classes"
+                          {search || sessionFilter !== "All Sessions"
                             ? "Try adjusting your search or filters"
-                            : isAdmin
+                            : canManage
                               ? "Add your first student to get started"
-                              : "No students in your class yet"}
+                              : "No students in your session yet"}
                         </p>
                       </div>
-                      {(search || classFilter !== "All Classes") && (
+                      {(search || sessionFilter !== "All Sessions") && (
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => {
                             setSearch("");
-                            setClassFilter("All Classes");
+                            setSessionFilter("All Sessions");
                           }}
                           className="text-xs"
                         >
@@ -432,9 +618,16 @@ export default function StudentsPage({ session }: StudentsPageProps) {
                               {student.name.charAt(0)}
                             </span>
                           </div>
-                          <p className="font-semibold text-foreground truncate leading-tight">
-                            {student.name}
-                          </p>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-foreground truncate leading-tight">
+                              {student.name}
+                            </p>
+                            {student.rollNumber && (
+                              <p className="text-xs text-muted-foreground">
+                                Roll #{student.rollNumber}
+                              </p>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td className="px-4 py-3.5 text-muted-foreground text-sm">
@@ -449,12 +642,13 @@ export default function StudentsPage({ session }: StudentsPageProps) {
                         </div>
                       </td>
                       <td className="px-4 py-3.5 hidden md:table-cell">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-primary/8 border border-primary/15 text-primary text-xs font-medium">
-                          {student.className}
-                        </span>
+                        <SessionBadge slot={student.timeSlot} />
+                      </td>
+                      <td className="px-4 py-3.5 text-muted-foreground text-xs hidden lg:table-cell">
+                        {student.studentClass || "—"}
                       </td>
                       <td className="px-4 py-3.5 text-muted-foreground text-sm hidden lg:table-cell">
-                        {student.teacherName}
+                        {student.teacherName || "—"}
                       </td>
                       <td className="px-4 py-3.5 text-center">
                         <span
@@ -473,7 +667,7 @@ export default function StudentsPage({ session }: StudentsPageProps) {
                           )}
                         </span>
                       </td>
-                      {isAdmin && (
+                      {canManage && (
                         <td className="px-4 py-3.5">
                           <div className="flex items-center justify-center gap-1">
                             <button
@@ -497,7 +691,12 @@ export default function StudentsPage({ session }: StudentsPageProps) {
                               type="button"
                               className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors duration-150"
                               title="Delete"
-                              onClick={() => setDeleteTarget(student.id)}
+                              onClick={() =>
+                                setDeleteTarget({
+                                  id: student.id,
+                                  name: student.name,
+                                })
+                              }
                               data-ocid={`students.delete_button.${rowIndex}`}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -573,7 +772,7 @@ export default function StudentsPage({ session }: StudentsPageProps) {
       {/* ── Add Student Modal ──────────────────────────────────────────────── */}
       <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
         <DialogContent
-          className="max-w-md w-full"
+          className="max-w-lg w-full max-h-[90vh] overflow-y-auto"
           data-ocid="students.add_modal.dialog"
         >
           <div className="gold-shimmer -mx-6 -mt-6 mb-2 rounded-t-lg" />
@@ -622,7 +821,7 @@ export default function StudentsPage({ session }: StudentsPageProps) {
               </div>
               <div className="col-span-2">
                 <Label htmlFor="add-mobile" className="text-sm font-medium">
-                  Parent Mobile
+                  Mobile Number
                 </Label>
                 <Input
                   id="add-mobile"
@@ -636,43 +835,105 @@ export default function StudentsPage({ session }: StudentsPageProps) {
                 />
               </div>
               <div>
-                <Label htmlFor="add-class" className="text-sm font-medium">
-                  Class <span className="text-destructive">*</span>
+                <Label className="text-sm font-medium">
+                  Session <span className="text-destructive">*</span>
                 </Label>
                 <Select
-                  value={form.className}
-                  onValueChange={(v) => {
-                    const teacherName = resolveTeacher(v);
-                    setForm((f) => ({ ...f, className: v, teacherName }));
-                  }}
+                  value={form.timeSlot}
+                  onValueChange={(v) =>
+                    setForm((f) => ({
+                      ...f,
+                      timeSlot: v as SessionType,
+                      teacherName: "",
+                    }))
+                  }
                 >
                   <SelectTrigger
-                    id="add-class"
                     className="mt-1.5"
-                    data-ocid="students.class.select"
+                    data-ocid="students.session.select"
                   >
-                    <SelectValue placeholder="Select class" />
+                    <SelectValue placeholder="Select session" />
                   </SelectTrigger>
                   <SelectContent>
-                    {classOptions.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
+                    {SESSION_LIST.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label htmlFor="add-teacher" className="text-sm font-medium">
-                  Ustaad
+                <Label className="text-sm font-medium">Ustaad</Label>
+                <Select
+                  value={form.teacherName}
+                  onValueChange={(v) =>
+                    setForm((f) => ({ ...f, teacherName: v }))
+                  }
+                  disabled={!form.timeSlot}
+                >
+                  <SelectTrigger
+                    className="mt-1.5"
+                    data-ocid="students.teacher.select"
+                  >
+                    <SelectValue
+                      placeholder={
+                        form.timeSlot ? "Select Ustaad" : "Select session first"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {addFormUstaads.map((u) => (
+                      <SelectItem key={u} value={u}>
+                        {u}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="col-span-2">
+                <Label htmlFor="add-address" className="text-sm font-medium">
+                  Address
                 </Label>
                 <Input
-                  id="add-teacher"
-                  value={form.teacherName}
-                  readOnly
-                  placeholder="Auto-filled"
-                  className="mt-1.5 border-border/70 bg-muted/40 text-muted-foreground cursor-default"
-                  data-ocid="students.teacher.input"
+                  id="add-address"
+                  placeholder="e.g. 123 Main Street"
+                  value={form.address}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, address: e.target.value }))
+                  }
+                  className="mt-1.5 border-border/70 focus:border-primary/50"
+                  data-ocid="students.address.input"
+                />
+              </div>
+              <div>
+                <Label htmlFor="add-roll" className="text-sm font-medium">
+                  Roll Number
+                </Label>
+                <Input
+                  id="add-roll"
+                  placeholder="e.g. 042"
+                  value={form.rollNumber}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, rollNumber: e.target.value }))
+                  }
+                  className="mt-1.5 border-border/70 focus:border-primary/50"
+                  data-ocid="students.roll_number.input"
+                />
+              </div>
+              <div>
+                <Label htmlFor="add-admission" className="text-sm font-medium">
+                  Admission Date
+                </Label>
+                <Input
+                  id="add-admission"
+                  type="date"
+                  value={form.admissionDate}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, admissionDate: e.target.value }))
+                  }
+                  className="mt-1.5 border-border/70 focus:border-primary/50"
+                  data-ocid="students.admission_date.input"
                 />
               </div>
               <div>
@@ -721,6 +982,29 @@ export default function StudentsPage({ session }: StudentsPageProps) {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="col-span-2">
+                <Label className="text-sm font-medium">Class / Level</Label>
+                <Select
+                  value={form.studentClass}
+                  onValueChange={(v) =>
+                    setForm((f) => ({ ...f, studentClass: v }))
+                  }
+                >
+                  <SelectTrigger
+                    className="mt-1.5"
+                    data-ocid="students.class.select"
+                  >
+                    <SelectValue placeholder="Select class" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STUDENT_CLASS_OPTIONS.map((cls) => (
+                      <SelectItem key={cls} value={cls}>
+                        {cls}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 
@@ -740,7 +1024,7 @@ export default function StudentsPage({ session }: StudentsPageProps) {
               type="button"
               className="btn-gold"
               onClick={handleAdd}
-              disabled={!form.name.trim() || !form.className}
+              disabled={!form.name.trim() || !form.timeSlot}
               data-ocid="students.add_modal.submit_button"
             >
               <Plus className="w-4 h-4 mr-1" />
@@ -756,7 +1040,7 @@ export default function StudentsPage({ session }: StudentsPageProps) {
         onOpenChange={(open) => !open && setEditTarget(null)}
       >
         <DialogContent
-          className="max-w-md w-full"
+          className="max-w-lg w-full max-h-[90vh] overflow-y-auto"
           data-ocid="students.edit_modal.dialog"
         >
           <div className="gold-shimmer -mx-6 -mt-6 mb-2 rounded-t-lg" />
@@ -803,7 +1087,7 @@ export default function StudentsPage({ session }: StudentsPageProps) {
               </div>
               <div className="col-span-2">
                 <Label htmlFor="edit-mobile" className="text-sm font-medium">
-                  Parent Mobile
+                  Mobile Number
                 </Label>
                 <Input
                   id="edit-mobile"
@@ -819,46 +1103,100 @@ export default function StudentsPage({ session }: StudentsPageProps) {
                 />
               </div>
               <div>
-                <Label htmlFor="edit-class" className="text-sm font-medium">
-                  Class
-                </Label>
+                <Label className="text-sm font-medium">Session</Label>
                 <Select
-                  value={editForm.className}
-                  onValueChange={(v) => {
-                    const teacherName = resolveTeacher(v);
+                  value={editForm.timeSlot}
+                  onValueChange={(v) =>
                     setEditForm((f) => ({
                       ...f,
-                      className: v,
-                      teacherName,
-                    }));
-                  }}
+                      timeSlot: v as SessionType,
+                      teacherName: "",
+                    }))
+                  }
                 >
                   <SelectTrigger
-                    id="edit-class"
                     className="mt-1.5"
-                    data-ocid="students.edit.class.select"
+                    data-ocid="students.edit.session.select"
                   >
-                    <SelectValue />
+                    <SelectValue placeholder="Select session" />
                   </SelectTrigger>
                   <SelectContent>
-                    {classOptions.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
+                    {SESSION_LIST.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label htmlFor="edit-teacher" className="text-sm font-medium">
-                  Ustaad
+                <Label className="text-sm font-medium">Ustaad</Label>
+                <Select
+                  value={editForm.teacherName}
+                  onValueChange={(v) =>
+                    setEditForm((f) => ({ ...f, teacherName: v }))
+                  }
+                  disabled={!editForm.timeSlot}
+                >
+                  <SelectTrigger
+                    className="mt-1.5"
+                    data-ocid="students.edit.teacher.select"
+                  >
+                    <SelectValue placeholder="Select Ustaad" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {editFormUstaads.map((u) => (
+                      <SelectItem key={u} value={u}>
+                        {u}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="col-span-2">
+                <Label htmlFor="edit-address" className="text-sm font-medium">
+                  Address
                 </Label>
                 <Input
-                  id="edit-teacher"
-                  value={editForm.teacherName}
-                  readOnly
-                  className="mt-1.5 border-border/70 bg-muted/40 text-muted-foreground cursor-default"
-                  data-ocid="students.edit.teacher.input"
+                  id="edit-address"
+                  value={editForm.address}
+                  onChange={(e) =>
+                    setEditForm((f) => ({ ...f, address: e.target.value }))
+                  }
+                  className="mt-1.5 border-border/70 focus:border-primary/50"
+                  data-ocid="students.edit.address.input"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-roll" className="text-sm font-medium">
+                  Roll Number
+                </Label>
+                <Input
+                  id="edit-roll"
+                  value={editForm.rollNumber}
+                  onChange={(e) =>
+                    setEditForm((f) => ({ ...f, rollNumber: e.target.value }))
+                  }
+                  className="mt-1.5 border-border/70 focus:border-primary/50"
+                  data-ocid="students.edit.roll_number.input"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-admission" className="text-sm font-medium">
+                  Admission Date
+                </Label>
+                <Input
+                  id="edit-admission"
+                  type="date"
+                  value={editForm.admissionDate}
+                  onChange={(e) =>
+                    setEditForm((f) => ({
+                      ...f,
+                      admissionDate: e.target.value,
+                    }))
+                  }
+                  className="mt-1.5 border-border/70 focus:border-primary/50"
+                  data-ocid="students.edit.admission_date.input"
                 />
               </div>
               <div>
@@ -906,6 +1244,29 @@ export default function StudentsPage({ session }: StudentsPageProps) {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="col-span-2">
+                <Label className="text-sm font-medium">Class / Level</Label>
+                <Select
+                  value={editForm.studentClass}
+                  onValueChange={(v) =>
+                    setEditForm((f) => ({ ...f, studentClass: v }))
+                  }
+                >
+                  <SelectTrigger
+                    className="mt-1.5"
+                    data-ocid="students.edit.class.select"
+                  >
+                    <SelectValue placeholder="Select class" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STUDENT_CLASS_OPTIONS.map((cls) => (
+                      <SelectItem key={cls} value={cls}>
+                        {cls}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 
@@ -947,8 +1308,11 @@ export default function StudentsPage({ session }: StudentsPageProps) {
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground leading-relaxed">
-            This will permanently remove the student from the list. This action
-            cannot be undone.
+            This will permanently remove{" "}
+            <span className="font-semibold text-foreground">
+              {deleteTarget?.name}
+            </span>{" "}
+            from the list. This action cannot be undone.
           </p>
           <DialogFooter className="gap-2 sm:gap-2">
             <Button
@@ -962,7 +1326,9 @@ export default function StudentsPage({ session }: StudentsPageProps) {
             <Button
               type="button"
               variant="destructive"
-              onClick={() => deleteTarget && handleDelete(deleteTarget)}
+              onClick={() =>
+                deleteTarget && handleDelete(deleteTarget.id, deleteTarget.name)
+              }
               data-ocid="students.delete_modal.confirm_button"
             >
               <Trash2 className="w-4 h-4 mr-1" />

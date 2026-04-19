@@ -1,6 +1,11 @@
-import type { Session } from "@/lib/storage";
+import {
+  type Session,
+  getNotifications,
+  getUnreadCount,
+  markNotificationRead,
+} from "@/lib/storage";
 import type { AppPage } from "@/types/dashboard";
-import { Bell, ChevronDown, LogOut, Menu, Settings, User } from "lucide-react";
+import { Bell, ChevronDown, LogOut, Settings, User } from "lucide-react";
 import { useState } from "react";
 
 const PAGE_TITLES: Record<AppPage, string> = {
@@ -13,10 +18,24 @@ const PAGE_TITLES: Record<AppPage, string> = {
   gallery: "Gallery",
   contact: "Contact",
   "manage-teachers": "Manage Teachers",
+  settings: "Settings",
+  "admin-profile": "Admin Profile",
+  "ustaad-attendance": "Ustaad Attendance",
+  "monthly-report": "Monthly Reports",
+  "ustaad-morning": "Morning Session",
+  "ustaad-afternoon": "Afternoon Session",
+  "ustaad-evening": "Evening Session",
+  "ustaad-gallery": "Gallery",
+  "about-us": "About Us",
+  "admin-about-us": "About Us",
+  notifications: "Notifications",
+  "activity-log": "Activity Log",
+  "ustaad-profile": "My Profile",
+  "parent-profile": "My Profile",
 };
 
 const PAGE_SUBTITLES: Record<AppPage, string> = {
-  dashboard: "Maktab Zaid Bin Sabit",
+  dashboard: "Maktab Zaid Bin Sabit · 2026–27",
   students: "All enrolled students",
   attendance: "Daily attendance register",
   fees: "Fee collection & records",
@@ -25,6 +44,20 @@ const PAGE_SUBTITLES: Record<AppPage, string> = {
   gallery: "Photos & media",
   contact: "Teacher contacts",
   "manage-teachers": "Add, remove & assign teachers",
+  settings: "App preferences",
+  "admin-profile": "Edit your profile",
+  "ustaad-attendance": "Track Ustaad presence",
+  "monthly-report": "Download PDF reports",
+  "ustaad-morning": "Morning session students",
+  "ustaad-afternoon": "Afternoon session students",
+  "ustaad-evening": "Evening session students",
+  "ustaad-gallery": "Class photos & media",
+  "about-us": "Maktab Zaid Bin Sabit",
+  "admin-about-us": "Maktab Zaid Bin Sabit",
+  notifications: "All notifications",
+  "activity-log": "Ustaad & Admin actions log",
+  "ustaad-profile": "Edit your Ustaad profile",
+  "parent-profile": "Edit your parent profile",
 };
 
 const ROLE_BADGE: Record<
@@ -51,6 +84,7 @@ interface TopbarProps {
   sidebarCollapsed?: boolean;
   session: Session | null;
   onLogout?: () => void;
+  onNavigate?: (page: AppPage) => void;
 }
 
 export function Topbar({
@@ -59,12 +93,33 @@ export function Topbar({
   sidebarCollapsed,
   session,
   onLogout,
+  onNavigate,
 }: TopbarProps) {
   const [profileOpen, setProfileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [notifList, setNotifList] = useState(() =>
+    getNotifications().slice(0, 5),
+  );
 
   const role = session?.role ?? "admin";
   const roleBadge = ROLE_BADGE[role];
+  const unreadCount = getUnreadCount();
+
+  function handleNotifOpen() {
+    setNotifList(getNotifications().slice(0, 5));
+    setNotifOpen((v) => !v);
+    setProfileOpen(false);
+  }
+
+  function handleNotifClick(id: string) {
+    markNotificationRead(id);
+    setNotifList(getNotifications().slice(0, 5));
+  }
+
+  function handleViewAll() {
+    setNotifOpen(false);
+    onNavigate?.("notifications");
+  }
 
   return (
     <header
@@ -83,7 +138,20 @@ export function Topbar({
         aria-label="Open navigation"
         data-ocid="topbar.menu_button"
       >
-        <Menu className="w-5 h-5" />
+        <svg
+          className="w-5 h-5"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          aria-hidden="true"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M4 6h16M4 12h16M4 18h16"
+          />
+        </svg>
       </button>
 
       {/* Page title block */}
@@ -105,20 +173,19 @@ export function Topbar({
         <div className="relative">
           <button
             type="button"
-            onClick={() => {
-              setNotifOpen((v) => !v);
-              setProfileOpen(false);
-            }}
+            onClick={handleNotifOpen}
             className="relative p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
             aria-label="Notifications"
             aria-expanded={notifOpen}
             data-ocid="topbar.notifications_button"
           >
             <Bell className="w-5 h-5" />
-            <span
-              className="absolute top-1.5 right-1.5 w-2 h-2 bg-gold rounded-full ring-2 ring-card"
-              aria-hidden="true"
-            />
+            {unreadCount > 0 && (
+              <span
+                className="absolute top-1.5 right-1.5 w-2 h-2 bg-gold rounded-full ring-2 ring-card"
+                aria-hidden="true"
+              />
+            )}
           </button>
 
           {notifOpen && (
@@ -139,55 +206,51 @@ export function Topbar({
                   <p className="text-sm font-semibold text-foreground">
                     Notifications
                   </p>
-                  <span className="text-xs bg-gold/10 text-[#a37c00] px-2 py-0.5 rounded-full font-medium border border-gold/20">
-                    3 new
-                  </span>
-                </div>
-                {[
-                  {
-                    id: "fees-due",
-                    title: "Fees due in 3 days",
-                    sub: "5 students have pending fees",
-                    time: "2h ago",
-                    dot: "bg-yellow-400",
-                  },
-                  {
-                    id: "attendance-marked",
-                    title: "Attendance marked",
-                    sub: "Today's attendance saved — 92%",
-                    time: "5h ago",
-                    dot: "bg-emerald-500",
-                  },
-                  {
-                    id: "new-student",
-                    title: "New student enrolled",
-                    sub: "Ahmad Bilal added to Naazra class",
-                    time: "Yesterday",
-                    dot: "bg-primary",
-                  },
-                ].map((n) => (
-                  <div
-                    key={n.id}
-                    className="flex items-start gap-3 px-4 py-3 hover:bg-muted/40 transition-colors border-b border-border/50 last:border-0 cursor-pointer"
-                  >
-                    <span
-                      className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${n.dot}`}
-                    />
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-foreground">
-                        {n.title}
-                      </p>
-                      <p className="text-xs text-muted-foreground">{n.sub}</p>
-                    </div>
-                    <span className="text-xs text-muted-foreground flex-shrink-0 mt-0.5">
-                      {n.time}
+                  {unreadCount > 0 && (
+                    <span className="text-xs bg-gold/10 text-[#a37c00] px-2 py-0.5 rounded-full font-medium border border-gold/20">
+                      {unreadCount} new
                     </span>
+                  )}
+                </div>
+                {notifList.length === 0 ? (
+                  <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+                    No notifications
                   </div>
-                ))}
+                ) : (
+                  notifList.map((n, i) => (
+                    <button
+                      key={n.id}
+                      type="button"
+                      onClick={() => handleNotifClick(n.id)}
+                      className={`w-full text-left flex items-start gap-3 px-4 py-3 hover:bg-muted/40 transition-colors border-b border-border/50 last:border-0 cursor-pointer ${!n.isRead ? "bg-primary/3" : ""}`}
+                      data-ocid={`topbar.notification.${i + 1}`}
+                    >
+                      <span
+                        className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${n.isRead ? "bg-muted-foreground/30" : "bg-primary"}`}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-foreground truncate">
+                          {n.title}
+                        </p>
+                        <p className="text-xs text-muted-foreground line-clamp-2">
+                          {n.message}
+                        </p>
+                      </div>
+                      <span className="text-xs text-muted-foreground flex-shrink-0 mt-0.5">
+                        {new Date(n.date).toLocaleDateString("en-IN", {
+                          day: "numeric",
+                          month: "short",
+                        })}
+                      </span>
+                    </button>
+                  ))
+                )}
                 <div className="px-4 py-2.5 bg-muted/20">
                   <button
                     type="button"
+                    onClick={handleViewAll}
                     className="text-xs font-semibold text-primary hover:text-primary/80 transition-colors w-full text-center"
+                    data-ocid="topbar.view_all_notifications_button"
                   >
                     View all notifications
                   </button>
@@ -269,16 +332,27 @@ export function Topbar({
                     </div>
                   </div>
                 </div>
+                {role === "admin" && (
+                  <button
+                    type="button"
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted/50 transition-colors"
+                    onClick={() => {
+                      setProfileOpen(false);
+                      onNavigate?.("admin-profile");
+                    }}
+                    data-ocid="topbar.profile_link"
+                  >
+                    <User className="w-4 h-4 text-muted-foreground" /> My
+                    Profile
+                  </button>
+                )}
                 <button
                   type="button"
                   className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted/50 transition-colors"
-                  data-ocid="topbar.profile_link"
-                >
-                  <User className="w-4 h-4 text-muted-foreground" /> My Profile
-                </button>
-                <button
-                  type="button"
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted/50 transition-colors"
+                  onClick={() => {
+                    setProfileOpen(false);
+                    onNavigate?.("settings");
+                  }}
                   data-ocid="topbar.settings_link"
                 >
                   <Settings className="w-4 h-4 text-muted-foreground" />{" "}

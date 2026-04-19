@@ -17,17 +17,33 @@ export interface Student {
   name: string;
   fatherName: string;
   parentMobile: string;
-  className: string;
+  /** Session the student attends: "morning" | "afternoon" | "evening" */
+  timeSlot: string;
   teacherName: string;
   fees: number;
   feesStatus: "paid" | "pending";
+  address?: string;
+  rollNumber?: string;
+  admissionDate?: string;
+  /** Class/level of the student e.g. Hifz, Nazra */
+  studentClass?: string;
+  /** @deprecated Use timeSlot instead. Kept for backward-compat migration. */
+  className?: string;
 }
 
 export interface Teacher {
   id: string;
   name: string;
-  className: string;
+  /** Sessions this Ustaad teaches. Can be array of shifts. */
+  shifts?: string[];
+  /** Sessions this Ustaad teaches. Stored as comma-separated string or array. */
+  timeSlot?: string | string[];
   mobile: string;
+  /** Admin-approved mobile number for login */
+  mobileNumber?: string;
+  salary?: number;
+  /** @deprecated Removed from system. */
+  className?: string;
 }
 
 export interface AttendanceRecord {
@@ -48,7 +64,40 @@ export interface FeeRecord {
   status: "paid" | "pending";
 }
 
+/** Structured sabak record per section */
 export interface SabakRecord {
+  id: string;
+  studentId: string;
+  studentName: string;
+  section?: "quran" | "urdu" | "dua" | "hadees";
+  currentLesson?: string;
+  previousLesson?: string;
+  progressPercent?: number;
+  remarks: string;
+  updatedBy: string;
+  updatedAt: string;
+  // Quran-specific
+  surahName?: string;
+  ayatNumber?: number;
+  // Count-based (Urdu / Dua / Hadees)
+  countCompleted?: number;
+  // 7 manual sections
+  qaida?: string;
+  ammaPara?: string;
+  quran?: string;
+  dua?: string;
+  hadees?: string;
+  urdu?: string;
+  hifz?: string;
+  // Legacy / backward-compat
+  lessonName?: string;
+  progress?: number;
+  sabakType?: "urdu" | "dua" | "hadees" | "manual";
+  sabakManual?: string;
+}
+
+/** Legacy sabak record (kept for backward-compat reads) */
+export interface LegacySabakRecord {
   id: string;
   studentId: string;
   studentName: string;
@@ -57,6 +106,8 @@ export interface SabakRecord {
   remarks: string;
   updatedBy: string;
   updatedAt: string;
+  sabakType?: "urdu" | "dua" | "hadees" | "manual";
+  sabakManual?: string;
 }
 
 export interface Notice {
@@ -81,7 +132,12 @@ export interface Session {
   role: "admin" | "teacher" | "parent";
   name: string;
   mobile?: string;
+  /** @deprecated Not used in session system. */
   teacherClass?: string;
+  /** Primary time slot for the logged-in teacher */
+  teacherTimeSlot?: string;
+  /** All sessions this teacher teaches */
+  teacherSessions?: string[];
 }
 
 export interface SalaryRecord {
@@ -103,6 +159,81 @@ export interface ParentActivity {
   recentActivities: Array<{ action: string; timestamp: string }>;
 }
 
+// ─── Activity Log ─────────────────────────────────────────────────────────────
+
+export interface ActivityLog {
+  id: string;
+  timestamp: string;
+  actorName: string;
+  actorRole: "admin" | "ustaad";
+  action: "added_student" | "removed_student" | "updated_student";
+  targetStudentName: string;
+  details?: string;
+}
+
+// ─── New Feature Types ────────────────────────────────────────────────────────
+
+export interface AdminProfile {
+  name: string;
+  designation: string;
+  email: string;
+  phone: string;
+  address: string;
+  profileImage?: string;
+  bio?: string;
+  organization?: string;
+}
+
+export interface AppSettings {
+  darkMode: boolean;
+  desktopView: boolean;
+  academicYear: string;
+  theme?: "dark" | "light";
+  viewMode?: "app" | "desktop";
+  notifications?: boolean;
+}
+
+export interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  date: string;
+  isRead: boolean;
+  type?: "info" | "warning" | "success";
+  timestamp?: string;
+  read?: boolean;
+  forRole?: "admin" | "ustaad" | "parent" | "all";
+}
+
+export interface UstaadAttendance {
+  id: string;
+  ustaadId: string;
+  ustaadName: string;
+  date: string;
+  status: "present" | "absent";
+  notes?: string;
+}
+
+export interface UstaadProfile {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  bio: string;
+  timeSlot: string;
+  createdAt: string;
+  address?: string;
+  profileImage?: string;
+}
+
+export interface ParentProfile {
+  mobile: string;
+  name: string;
+  address: string;
+  profileImage?: string;
+  updatedAt: string;
+}
+
 // ─── Storage Keys ─────────────────────────────────────────────────────────────
 
 const KEYS = {
@@ -110,12 +241,19 @@ const KEYS = {
   teachers: "madrasa_teachers",
   attendance: "madrasa_attendance",
   fees: "madrasa_fees",
-  sabak: "madrasa_sabak",
+  sabak: "maktab_sabak_records",
   notices: "madrasa_notices",
   gallery: "madrasa_gallery",
   session: "madrasa_session",
   salaries: "madrasa_salaries",
   parentActivity: "madrasa_parent_activity",
+  adminProfile: "madrasa_admin_profile",
+  appSettings: "madrasa_app_settings",
+  notifications: "madrasa_notifications",
+  ustaadAttendance: "madrasa_ustaad_attendance",
+  ustaadProfiles: "madrasa_ustaad_profiles",
+  parentProfiles: "madrasa_parent_profiles",
+  activityLog: "maktab_activity_log",
 } as const;
 
 // ─── Generic helpers ──────────────────────────────────────────────────────────
@@ -142,13 +280,56 @@ function loadSingle<T>(key: string): T | null {
   }
 }
 
+// ─── Migration: className → timeSlot ─────────────────────────────────────────
+
+/**
+ * Maps legacy class names to sessions for migration.
+ * Called on every getStudents() call to handle old data gracefully.
+ */
+function migrateStudent(s: Student): Student {
+  // If student has no timeSlot but has className, derive timeSlot from className
+  if (!s.timeSlot && s.className) {
+    // Legacy data — assign a default session based on class index
+    const morning = ["Ibtidayyah", "Nisf Qaidah"];
+    const afternoon = [
+      "Mukammal Qaidah",
+      "Nisf Amma Para",
+      "Mukammal Amma Para",
+    ];
+    if (morning.some((c) => s.className?.includes(c))) {
+      return { ...s, timeSlot: "morning" };
+    }
+    if (afternoon.some((c) => s.className?.includes(c))) {
+      return { ...s, timeSlot: "afternoon" };
+    }
+    return { ...s, timeSlot: "evening" };
+  }
+  return s;
+}
+
 // ─── CRUD helpers ─────────────────────────────────────────────────────────────
 
-export const getStudents = (): Student[] => load<Student>(KEYS.students);
+export const getStudents = (): Student[] =>
+  load<Student>(KEYS.students).map(migrateStudent);
 export const saveStudents = (d: Student[]) => save(KEYS.students, d);
 
 export const getTeachers = (): Teacher[] => load<Teacher>(KEYS.teachers);
 export const saveTeachers = (d: Teacher[]) => save(KEYS.teachers, d);
+
+/** Returns all shift names for a given teacher name */
+export function getTeacherShifts(teacherName: string): string[] {
+  const teachers = getTeachers();
+  const teacher = teachers.find(
+    (t) => t.name.toLowerCase() === teacherName.toLowerCase(),
+  );
+  if (!teacher) return [];
+  if (teacher.shifts && teacher.shifts.length > 0) return teacher.shifts;
+  if (Array.isArray(teacher.timeSlot)) return teacher.timeSlot;
+  if (typeof teacher.timeSlot === "string" && teacher.timeSlot) {
+    return teacher.timeSlot.split(",").map((s) => s.trim());
+  }
+  return [];
+}
 
 export const getAttendance = (): AttendanceRecord[] =>
   load<AttendanceRecord>(KEYS.attendance);
@@ -158,8 +339,54 @@ export const saveAttendance = (d: AttendanceRecord[]) =>
 export const getFees = (): FeeRecord[] => load<FeeRecord>(KEYS.fees);
 export const saveFees = (d: FeeRecord[]) => save(KEYS.fees, d);
 
-export const getSabak = (): SabakRecord[] => load<SabakRecord>(KEYS.sabak);
-export const saveSabak = (d: SabakRecord[]) => save(KEYS.sabak, d);
+export const getSabakRecords = (): SabakRecord[] =>
+  load<SabakRecord>(KEYS.sabak);
+export const saveSabakRecords = (d: SabakRecord[]) => save(KEYS.sabak, d);
+
+/** Add or update a single sabak record (matched by studentId+section) */
+export function upsertSabakRecord(record: SabakRecord): void {
+  const all = getSabakRecords();
+  const idx = record.section
+    ? all.findIndex(
+        (r) => r.studentId === record.studentId && r.section === record.section,
+      )
+    : -1;
+  if (idx >= 0) {
+    all.unshift(record);
+    all.splice(idx + 1, 1);
+  } else {
+    all.unshift(record);
+  }
+  saveSabakRecords(all);
+}
+
+/** Get latest record per section for a student */
+export function getStudentSabakLatest(
+  studentId: string,
+): Partial<Record<string, SabakRecord>> {
+  const all = getSabakRecords().filter(
+    (r) => r.studentId === studentId && r.section,
+  );
+  const result: Partial<Record<string, SabakRecord>> = {};
+  for (const r of all) {
+    if (r.section && !result[r.section]) result[r.section] = r;
+  }
+  return result;
+}
+
+/** Get all records for a student+section (history) */
+export function getSabakHistory(
+  studentId: string,
+  section: SabakRecord["section"],
+): SabakRecord[] {
+  return getSabakRecords().filter(
+    (r) => r.studentId === studentId && r.section === section,
+  );
+}
+
+// Backward-compat aliases
+export const getSabak = getSabakRecords;
+export const saveSabak = saveSabakRecords;
 
 export const getNotices = (): Notice[] => load<Notice>(KEYS.notices);
 export const saveNotices = (d: Notice[]) => save(KEYS.notices, d);
@@ -224,555 +451,187 @@ export function addParentActivity(mobile: string, action: string): void {
   }
 }
 
-// ─── Seed Data ────────────────────────────────────────────────────────────────
+// ─── Admin Profile helpers ────────────────────────────────────────────────────
 
-export function seedDemoData(): void {
-  // Only seed if no students exist yet
-  if (localStorage.getItem(KEYS.students)) return;
-
-  // Teachers — exact 5 teachers with proper class assignments
-  const teachers: Teacher[] = [
-    {
-      id: "t1",
-      name: "Shaikh Tareef",
-      className: "Ibtidayyah",
-      mobile: "9800000001",
-    },
-    {
-      id: "t2",
-      name: "Shaikh Zaid",
-      className: "Nisf Qaidah",
-      mobile: "9800000002",
-    },
-    {
-      id: "t3",
-      name: "Shaikh Irsad",
-      className: "Mukammal Qaidah",
-      mobile: "9800000003",
-    },
-    {
-      id: "t4",
-      name: "Hafiz Sajid",
-      className: "Nazra",
-      mobile: "9800000004",
-    },
-    {
-      id: "t5",
-      name: "Shaikh Adnan",
-      className: "Hifz",
-      mobile: "9800000005",
-    },
-  ];
-  saveTeachers(teachers);
-
-  // Students — 12 students distributed across classes, each with parentMobile
-  const students: Student[] = [
-    {
-      id: "ms1",
-      name: "Ahmed Ibrahim",
-      fatherName: "Ibrahim Ali",
-      parentMobile: "9000000001",
-      className: "Ibtidayyah",
-      teacherName: "Shaikh Tareef",
-      fees: 1500,
-      feesStatus: "paid",
-    },
-    {
-      id: "ms2",
-      name: "Zaid Hussain",
-      fatherName: "Hussain Raza",
-      parentMobile: "9000000002",
-      className: "Ibtidayyah",
-      teacherName: "Shaikh Tareef",
-      fees: 1500,
-      feesStatus: "pending",
-    },
-    {
-      id: "ms3",
-      name: "Omar Farooq",
-      fatherName: "Farooq Umar",
-      parentMobile: "9000000003",
-      className: "Nisf Qaidah",
-      teacherName: "Shaikh Zaid",
-      fees: 1200,
-      feesStatus: "paid",
-    },
-    {
-      id: "ms4",
-      name: "Ali Siddiqui",
-      fatherName: "Siddiqui Anwar",
-      parentMobile: "9000000004",
-      className: "Nisf Qaidah",
-      teacherName: "Shaikh Zaid",
-      fees: 1200,
-      feesStatus: "pending",
-    },
-    {
-      id: "ms5",
-      name: "Hassan Raza",
-      fatherName: "Raza Karim",
-      parentMobile: "9000000005",
-      className: "Mukammal Qaidah",
-      teacherName: "Shaikh Irsad",
-      fees: 1000,
-      feesStatus: "paid",
-    },
-    {
-      id: "ms6",
-      name: "Ibrahim Malik",
-      fatherName: "Malik Yusuf",
-      parentMobile: "9000000006",
-      className: "Mukammal Qaidah",
-      teacherName: "Shaikh Irsad",
-      fees: 1000,
-      feesStatus: "paid",
-    },
-    {
-      id: "ms7",
-      name: "Yusuf Ansari",
-      fatherName: "Ansari Jameel",
-      parentMobile: "9000000007",
-      className: "Nazra",
-      teacherName: "Hafiz Sajid",
-      fees: 1000,
-      feesStatus: "pending",
-    },
-    {
-      id: "ms8",
-      name: "Salman Sheikh",
-      fatherName: "Sheikh Salim",
-      parentMobile: "9000000008",
-      className: "Nazra",
-      teacherName: "Hafiz Sajid",
-      fees: 1000,
-      feesStatus: "paid",
-    },
-    {
-      id: "ms9",
-      name: "Bilal Qureshi",
-      fatherName: "Qureshi Nasir",
-      parentMobile: "9000000009",
-      className: "Hifz",
-      teacherName: "Shaikh Adnan",
-      fees: 800,
-      feesStatus: "pending",
-    },
-    {
-      id: "ms10",
-      name: "Tariq Mehmood",
-      fatherName: "Mehmood Sadiq",
-      parentMobile: "9000000010",
-      className: "Hifz",
-      teacherName: "Shaikh Adnan",
-      fees: 800,
-      feesStatus: "paid",
-    },
-    {
-      id: "ms11",
-      name: "Khalid Jamil",
-      fatherName: "Jamil Bashir",
-      parentMobile: "9000000011",
-      className: "Nisf Amma Para",
-      teacherName: "Shaikh Adnan",
-      fees: 800,
-      feesStatus: "paid",
-    },
-    {
-      id: "ms12",
-      name: "Usman Patel",
-      fatherName: "Patel Rashid",
-      parentMobile: "9000000012",
-      className: "Mukammal Amma Para",
-      teacherName: "Hafiz Sajid",
-      fees: 800,
-      feesStatus: "pending",
-    },
-  ];
-  saveStudents(students);
-
-  // Notices — 5 notices
-  const notices: Notice[] = [
-    {
-      id: "nn1",
-      title: "Monthly Fee Reminder — April 2026",
-      message:
-        "All students must clear April 2026 fees by the 20th. A late payment penalty of ₹50 will be applied after the due date.",
-      date: "2026-04-10",
-      createdBy: "Admin",
-    },
-    {
-      id: "nn2",
-      title: "Eid-ul-Fitr Holiday — Apr 21–23",
-      message:
-        "Maktab will remain closed for three days during Eid-ul-Fitr from April 21 to April 23. Classes resume on Wednesday, April 24. Eid Mubarak to all families!",
-      date: "2026-04-08",
-      createdBy: "Admin",
-    },
-    {
-      id: "nn3",
-      title: "Annual Quran Recitation Competition",
-      message:
-        "Registration is open for Naazra and Hifz students. The competition is on April 30. Prizes for top 3 participants. Register with your class teacher by April 25.",
-      date: "2026-04-06",
-      createdBy: "Admin",
-    },
-    {
-      id: "nn4",
-      title: "Parent-Teacher Meeting — April 19",
-      message:
-        "All parents are requested to attend on Saturday, April 19 at 10 AM in the main hall to discuss their child's progress, attendance, and fees status.",
-      date: "2026-04-03",
-      createdBy: "Admin",
-    },
-    {
-      id: "nn5",
-      title: "Tajweed Workshop — Every Thursday",
-      message:
-        "A special Tajweed workshop will be held every Thursday from 4:00 PM to 5:30 PM starting April 18. Attendance is mandatory for Hifz students.",
-      date: "2026-04-01",
-      createdBy: "Admin",
-    },
-  ];
-  saveNotices(notices);
-
-  // Attendance — 10 records (mix of present/absent)
-  const today = new Date().toISOString().slice(0, 10);
-  const attendance: AttendanceRecord[] = [
-    {
-      id: "na1",
-      studentId: "ms1",
-      studentName: "Ahmed Ibrahim",
-      date: today,
-      status: "present",
-      markedBy: "Shaikh Tareef",
-    },
-    {
-      id: "na2",
-      studentId: "ms2",
-      studentName: "Zaid Hussain",
-      date: today,
-      status: "absent",
-      markedBy: "Shaikh Tareef",
-    },
-    {
-      id: "na3",
-      studentId: "ms3",
-      studentName: "Omar Farooq",
-      date: today,
-      status: "present",
-      markedBy: "Shaikh Zaid",
-    },
-    {
-      id: "na4",
-      studentId: "ms4",
-      studentName: "Ali Siddiqui",
-      date: today,
-      status: "present",
-      markedBy: "Shaikh Zaid",
-    },
-    {
-      id: "na5",
-      studentId: "ms5",
-      studentName: "Hassan Raza",
-      date: today,
-      status: "absent",
-      markedBy: "Shaikh Irsad",
-    },
-    {
-      id: "na6",
-      studentId: "ms6",
-      studentName: "Ibrahim Malik",
-      date: today,
-      status: "present",
-      markedBy: "Shaikh Irsad",
-    },
-    {
-      id: "na7",
-      studentId: "ms7",
-      studentName: "Yusuf Ansari",
-      date: today,
-      status: "present",
-      markedBy: "Hafiz Sajid",
-    },
-    {
-      id: "na8",
-      studentId: "ms8",
-      studentName: "Salman Sheikh",
-      date: today,
-      status: "absent",
-      markedBy: "Hafiz Sajid",
-    },
-    {
-      id: "na9",
-      studentId: "ms9",
-      studentName: "Bilal Qureshi",
-      date: today,
-      status: "present",
-      markedBy: "Shaikh Adnan",
-    },
-    {
-      id: "na10",
-      studentId: "ms10",
-      studentName: "Tariq Mehmood",
-      date: today,
-      status: "present",
-      markedBy: "Shaikh Adnan",
-    },
-  ];
-  saveAttendance(attendance);
-
-  // Fee records — 10 records (mix of paid/pending, different months)
-  const feeRecords: FeeRecord[] = [
-    {
-      id: "nf1",
-      studentId: "ms1",
-      studentName: "Ahmed Ibrahim",
-      month: "April 2026",
-      amount: 1500,
-      status: "paid",
-    },
-    {
-      id: "nf2",
-      studentId: "ms2",
-      studentName: "Zaid Hussain",
-      month: "April 2026",
-      amount: 1500,
-      status: "pending",
-    },
-    {
-      id: "nf3",
-      studentId: "ms3",
-      studentName: "Omar Farooq",
-      month: "April 2026",
-      amount: 1200,
-      status: "paid",
-    },
-    {
-      id: "nf4",
-      studentId: "ms4",
-      studentName: "Ali Siddiqui",
-      month: "April 2026",
-      amount: 1200,
-      status: "pending",
-    },
-    {
-      id: "nf5",
-      studentId: "ms5",
-      studentName: "Hassan Raza",
-      month: "April 2026",
-      amount: 1000,
-      status: "paid",
-    },
-    {
-      id: "nf6",
-      studentId: "ms6",
-      studentName: "Ibrahim Malik",
-      month: "March 2026",
-      amount: 1000,
-      status: "paid",
-    },
-    {
-      id: "nf7",
-      studentId: "ms7",
-      studentName: "Yusuf Ansari",
-      month: "April 2026",
-      amount: 1000,
-      status: "pending",
-    },
-    {
-      id: "nf8",
-      studentId: "ms8",
-      studentName: "Salman Sheikh",
-      month: "March 2026",
-      amount: 1000,
-      status: "paid",
-    },
-    {
-      id: "nf9",
-      studentId: "ms9",
-      studentName: "Bilal Qureshi",
-      month: "April 2026",
-      amount: 800,
-      status: "pending",
-    },
-    {
-      id: "nf10",
-      studentId: "ms10",
-      studentName: "Tariq Mehmood",
-      month: "February 2026",
-      amount: 800,
-      status: "paid",
-    },
-  ];
-  saveFees(feeRecords);
-
-  // Sabak records — 8 records with lesson names, progress%, remarks
-  const sabakRecords: SabakRecord[] = [
-    {
-      id: "ns1",
-      studentId: "ms1",
-      studentName: "Ahmed Ibrahim",
-      lessonName: "Para 28 — Al-Mujadila",
-      progress: 82,
-      remarks: "Tajweed is very strong. Keep up the momentum.",
-      updatedBy: "Shaikh Tareef",
-      updatedAt: "2026-04-16",
-    },
-    {
-      id: "ns2",
-      studentId: "ms2",
-      studentName: "Zaid Hussain",
-      lessonName: "Surah Al-Baqarah (p.2)",
-      progress: 55,
-      remarks: "Recitation is clear; work on pronunciation of ض and ظ.",
-      updatedBy: "Shaikh Tareef",
-      updatedAt: "2026-04-16",
-    },
-    {
-      id: "ns3",
-      studentId: "ms3",
-      studentName: "Omar Farooq",
-      lessonName: "Para 22 — Al-Ahzab",
-      progress: 75,
-      remarks: "Good retention; needs to revise Para 20–21 for consistency.",
-      updatedBy: "Shaikh Zaid",
-      updatedAt: "2026-04-15",
-    },
-    {
-      id: "ns4",
-      studentId: "ms4",
-      studentName: "Ali Siddiqui",
-      lessonName: "Lesson 8 — Basic Reading",
-      progress: 40,
-      remarks: "Struggling with long vowels. Extra practice needed daily.",
-      updatedBy: "Shaikh Zaid",
-      updatedAt: "2026-04-16",
-    },
-    {
-      id: "ns5",
-      studentId: "ms5",
-      studentName: "Hassan Raza",
-      lessonName: "Surah Aal-Imran",
-      progress: 75,
-      remarks: "Excellent fluency and speed. Ready for Hifz evaluation.",
-      updatedBy: "Shaikh Irsad",
-      updatedAt: "2026-04-14",
-    },
-    {
-      id: "ns6",
-      studentId: "ms6",
-      studentName: "Ibrahim Malik",
-      lessonName: "Lesson 4 — Nurani Qaida",
-      progress: 40,
-      remarks: "Basics need reinforcement. Parents should practice at home.",
-      updatedBy: "Shaikh Irsad",
-      updatedAt: "2026-04-16",
-    },
-    {
-      id: "ns7",
-      studentId: "ms7",
-      studentName: "Yusuf Ansari",
-      lessonName: "Para 30 — Al-Naba",
-      progress: 88,
-      remarks: "Near completion of Quran. Exceptional student.",
-      updatedBy: "Hafiz Sajid",
-      updatedAt: "2026-04-16",
-    },
-    {
-      id: "ns8",
-      studentId: "ms9",
-      studentName: "Bilal Qureshi",
-      lessonName: "Lesson 6 — Nurani Qaida",
-      progress: 60,
-      remarks: "Good improvement this month. Maintain the daily routine.",
-      updatedBy: "Shaikh Adnan",
-      updatedAt: "2026-04-17",
-    },
-  ];
-  saveSabak(sabakRecords);
-
-  // Salary records — sample salary data for teachers
-  const salaryRecords: SalaryRecord[] = [
-    {
-      id: "sal1",
-      teacherId: "t1",
-      teacherName: "Shaikh Tareef",
-      month: "April",
-      year: "2026",
-      amount: 8000,
-      status: "paid",
-      paidDate: "2026-04-05",
-    },
-    {
-      id: "sal2",
-      teacherId: "t2",
-      teacherName: "Shaikh Zaid",
-      month: "April",
-      year: "2026",
-      amount: 7500,
-      status: "pending",
-    },
-    {
-      id: "sal3",
-      teacherId: "t3",
-      teacherName: "Shaikh Irsad",
-      month: "April",
-      year: "2026",
-      amount: 7500,
-      status: "pending",
-    },
-    {
-      id: "sal4",
-      teacherId: "t4",
-      teacherName: "Hafiz Sajid",
-      month: "April",
-      year: "2026",
-      amount: 9000,
-      status: "paid",
-      paidDate: "2026-04-06",
-    },
-    {
-      id: "sal5",
-      teacherId: "t5",
-      teacherName: "Shaikh Adnan",
-      month: "April",
-      year: "2026",
-      amount: 10000,
-      status: "pending",
-    },
-  ];
-  saveSalaries(salaryRecords);
-
-  // Gallery — 3 placeholder items
-  const gallery: GalleryItem[] = [
-    {
-      id: "ng1",
-      title: "Annual Prize Distribution 2026",
-      url: "/assets/images/placeholder.svg",
-      type: "image",
-      addedAt: "2026-04-01",
-      uploadedBy: "Admin",
-    },
-    {
-      id: "ng2",
-      title: "Quran Recitation Competition",
-      url: "/assets/images/placeholder.svg",
-      type: "image",
-      addedAt: "2026-03-15",
-      uploadedBy: "Admin",
-      classTag: "Hifz",
-    },
-    {
-      id: "ng3",
-      title: "Parent-Teacher Meeting Highlights",
-      url: "/assets/images/placeholder.svg",
-      type: "image",
-      addedAt: "2026-03-01",
-      uploadedBy: "Admin",
-    },
-  ];
-  saveGallery(gallery);
+export function getAdminProfile(): AdminProfile | null {
+  return loadSingle<AdminProfile>(KEYS.adminProfile);
 }
 
-// Auto-seed on first load
-seedDemoData();
+export function saveAdminProfile(profile: AdminProfile): void {
+  localStorage.setItem(KEYS.adminProfile, JSON.stringify(profile));
+}
+
+// ─── App Settings helpers ─────────────────────────────────────────────────────
+
+const DEFAULT_SETTINGS: AppSettings = {
+  darkMode: false,
+  desktopView: false,
+  academicYear: "2026-27",
+};
+
+export function getAppSettings(): AppSettings {
+  const stored = loadSingle<AppSettings>(KEYS.appSettings);
+  return stored ?? { ...DEFAULT_SETTINGS };
+}
+
+export function saveAppSettings(settings: AppSettings): void {
+  localStorage.setItem(KEYS.appSettings, JSON.stringify(settings));
+}
+
+export const loadAdminProfile = getAdminProfile;
+export const loadAppSettings = getAppSettings;
+
+// ─── Notification helpers ─────────────────────────────────────────────────────
+
+export function getNotifications(): Notification[] {
+  return load<Notification>(KEYS.notifications);
+}
+
+export function loadNotifications(): Notification[] {
+  return getNotifications();
+}
+
+export function saveNotifications(items: Notification[]): void {
+  save(KEYS.notifications, items);
+}
+
+export function saveNotification(n: Notification): void {
+  const all = getNotifications();
+  all.unshift(n);
+  save(KEYS.notifications, all);
+}
+
+export function markNotificationRead(id: string): void {
+  const all = getNotifications();
+  const idx = all.findIndex((n) => n.id === id);
+  if (idx >= 0) {
+    all[idx].isRead = true;
+    save(KEYS.notifications, all);
+  }
+}
+
+export function markAllNotificationsRead(): void {
+  const all = getNotifications().map((n) => ({ ...n, isRead: true }));
+  save(KEYS.notifications, all);
+}
+
+export function getUnreadCount(): number {
+  return getNotifications().filter((n) => !n.isRead).length;
+}
+
+// ─── Ustaad Attendance helpers ────────────────────────────────────────────────
+
+export function getUstaadAttendance(): UstaadAttendance[] {
+  return load<UstaadAttendance>(KEYS.ustaadAttendance);
+}
+
+export function loadUstaadAttendance(): UstaadAttendance[] {
+  return getUstaadAttendance();
+}
+
+export function saveUstaadAttendance(records: UstaadAttendance[]): void {
+  save(KEYS.ustaadAttendance, records);
+}
+
+export function addUstaadAttendanceRecord(record: UstaadAttendance): void {
+  const all = getUstaadAttendance();
+  const idx = all.findIndex(
+    (r) => r.ustaadName === record.ustaadName && r.date === record.date,
+  );
+  if (idx >= 0) {
+    all[idx] = record;
+  } else {
+    all.push(record);
+  }
+  save(KEYS.ustaadAttendance, all);
+}
+
+export function getUstaadAttendanceByDate(date: string): UstaadAttendance[] {
+  return getUstaadAttendance().filter((r) => r.date === date);
+}
+
+// ─── Ustaad Profile helpers ───────────────────────────────────────────────────
+
+export function getUstaadProfile(name: string): UstaadProfile | null {
+  const all = load<UstaadProfile>(KEYS.ustaadProfiles);
+  return all.find((p) => p.name === name) ?? null;
+}
+
+export function saveUstaadProfile(profile: UstaadProfile): void {
+  const all = load<UstaadProfile>(KEYS.ustaadProfiles);
+  const idx = all.findIndex((p) => p.name === profile.name);
+  if (idx >= 0) {
+    all[idx] = profile;
+  } else {
+    all.push(profile);
+  }
+  save(KEYS.ustaadProfiles, all);
+}
+
+export function getParentProfileByMobile(mobile: string): ParentProfile | null {
+  const all = load<ParentProfile>(KEYS.parentProfiles);
+  return all.find((p) => p.mobile === mobile) ?? null;
+}
+
+export function saveParentProfileRecord(profile: ParentProfile): void {
+  const all = load<ParentProfile>(KEYS.parentProfiles);
+  const idx = all.findIndex((p) => p.mobile === profile.mobile);
+  if (idx >= 0) {
+    all[idx] = profile;
+  } else {
+    all.push(profile);
+  }
+  save(KEYS.parentProfiles, all);
+}
+
+// ─── Activity Log helpers ─────────────────────────────────────────────────────
+
+export function getActivityLog(): ActivityLog[] {
+  return load<ActivityLog>(KEYS.activityLog);
+}
+
+export function addActivityLogEntry(
+  entry: Omit<ActivityLog, "id" | "timestamp">,
+): void {
+  const all = getActivityLog();
+  const newEntry: ActivityLog = {
+    ...entry,
+    id: createId(),
+    timestamp: new Date().toISOString(),
+  };
+  const updated = [newEntry, ...all].slice(0, 200);
+  save(KEYS.activityLog, updated);
+}
+
+export function clearActivityLog(): void {
+  localStorage.removeItem(KEYS.activityLog);
+}
+
+export const loadTeachers = getTeachers;
+export const loadStudents = getStudents;
+export const loadNotices = getNotices;
+
+// ─── Init Default Settings ────────────────────────────────────────────────────
+
+export function initDefaultSettings(): void {
+  if (!localStorage.getItem(KEYS.appSettings)) {
+    saveAppSettings({ ...DEFAULT_SETTINGS });
+  }
+  if (!localStorage.getItem(KEYS.adminProfile)) {
+    saveAdminProfile({
+      name: "Admin",
+      designation: "Principal",
+      email: "",
+      phone: "",
+      address: "Maktab Zaid Bin Sabit",
+    });
+  }
+}
+
+// ─── Seed (no-op — all data is added manually by Admin) ──────────────────────
+
+export function seedDemoData(): void {
+  // No demo data. System starts empty. Admin adds real data manually.
+}
+
+initDefaultSettings();

@@ -15,10 +15,12 @@ import {
   createId,
   getAttendance,
   getStudents,
-  getTeachers,
   saveAttendance,
 } from "@/lib/storage";
+import type { AppPage } from "@/types/dashboard";
 import {
+  ArrowLeft,
+  Bell,
   CalendarDays,
   Check,
   CheckCircle2,
@@ -35,6 +37,7 @@ import { toast } from "sonner";
 
 interface AttendancePageProps {
   session: Session;
+  setActivePage?: (page: AppPage) => void;
 }
 
 type AttendanceStatus = "Present" | "Absent";
@@ -68,7 +71,7 @@ function buildWhatsAppUrl(mobile: string, message: string): string {
   return `https://wa.me/${num}?text=${encodeURIComponent(message)}`;
 }
 
-// ─── WhatsApp Alert Modal ────────────────────────────────────────────────────
+// ─── WhatsApp helper ────────────────────────────────────────────────────────
 
 interface AbsentAlert {
   studentName: string;
@@ -77,45 +80,47 @@ interface AbsentAlert {
   message: string;
 }
 
-interface WhatsAppModalProps {
+function buildAbsenceMessage(studentName: string): string {
+  return `Assalamu Alaikum, your child ${studentName} was absent today in Maktab. Please ensure regular attendance. - Maktab Zaid Bin Sabit`;
+}
+
+// ─── Send All Reminders Modal ────────────────────────────────────────────────
+
+interface SendAllModalProps {
   alerts: AbsentAlert[];
   onClose: () => void;
 }
 
-function WhatsAppModal({ alerts, onClose }: WhatsAppModalProps) {
+function SendAllModal({ alerts, onClose }: SendAllModalProps) {
   return (
     <dialog
       open
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-transparent w-full h-full max-w-none max-h-none"
-      aria-labelledby="wa-modal-title"
-      data-ocid="attendance.whatsapp.dialog"
+      aria-labelledby="send-all-modal-title"
+      data-ocid="attendance.send_all.dialog"
     >
-      {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         onClick={onClose}
         onKeyDown={(e) => e.key === "Escape" && onClose()}
         role="presentation"
       />
-
-      {/* Panel */}
       <div className="relative bg-card border border-border rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-[#166534]/8">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-full bg-[#25D366]/15 flex items-center justify-center">
-              <MessageCircle className="w-5 h-5 text-[#25D366]" />
+            <div className="w-9 h-9 rounded-full bg-amber-500/15 flex items-center justify-center">
+              <Bell className="w-5 h-5 text-amber-500" />
             </div>
             <div>
               <h2
-                id="wa-modal-title"
+                id="send-all-modal-title"
                 className="text-sm font-bold text-foreground"
               >
-                Absent Student Alerts
+                Send Absence Reminders
               </h2>
               <p className="text-xs text-muted-foreground">
-                {alerts.length} student{alerts.length !== 1 ? "s" : ""} absent
-                today
+                {alerts.length} absent student
+                {alerts.length !== 1 ? "s" : ""}
               </p>
             </div>
           </div>
@@ -123,18 +128,16 @@ function WhatsAppModal({ alerts, onClose }: WhatsAppModalProps) {
             type="button"
             aria-label="Close modal"
             onClick={onClose}
-            data-ocid="attendance.whatsapp.close_button"
+            data-ocid="attendance.send_all.close_button"
             className="w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors duration-150"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Body */}
         <div className="overflow-y-auto flex-1 divide-y divide-border/40">
           {alerts.map((alert, i) => (
             <div key={alert.studentName} className="p-4 space-y-3">
-              {/* Student info row */}
               <div className="flex items-start gap-3">
                 <div className="w-9 h-9 rounded-full bg-destructive/10 flex items-center justify-center flex-shrink-0">
                   <span className="text-sm font-bold text-destructive">
@@ -159,39 +162,31 @@ function WhatsAppModal({ alerts, onClose }: WhatsAppModalProps) {
                   Absent
                 </Badge>
               </div>
-
-              {/* Message preview */}
-              <div className="bg-[#dcf8c6]/20 dark:bg-[#25D366]/8 border border-[#25D366]/20 rounded-xl p-3">
-                <p className="text-xs text-muted-foreground mb-1.5 font-semibold uppercase tracking-wider">
-                  WhatsApp Message
-                </p>
-                <p className="text-sm text-foreground leading-relaxed">
+              <div className="bg-muted/30 border border-border/50 rounded-xl p-3">
+                <p className="text-xs text-muted-foreground leading-relaxed">
                   {alert.message}
                 </p>
               </div>
-
-              {/* Send button */}
               <a
                 href={buildWhatsAppUrl(alert.parentMobile, alert.message)}
                 target="_blank"
                 rel="noopener noreferrer"
-                data-ocid={`attendance.whatsapp.send_button.${i + 1}`}
-                className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-sm font-semibold text-white transition-all duration-200 hover:opacity-90 hover:scale-[1.01] active:scale-[0.99]"
+                data-ocid={`attendance.send_all.send_button.${i + 1}`}
+                className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-sm font-semibold text-white transition-all duration-200 hover:opacity-90"
                 style={{ background: "#25D366" }}
               >
                 <MessageCircle className="w-4 h-4" />
-                Send WhatsApp to {alert.fatherName}
+                Send to {alert.fatherName}
               </a>
             </div>
           ))}
         </div>
 
-        {/* Footer */}
         <div className="px-5 py-4 border-t border-border bg-muted/20">
           <Button
             type="button"
             onClick={onClose}
-            data-ocid="attendance.whatsapp.done_button"
+            data-ocid="attendance.send_all.done_button"
             className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"
           >
             <CheckCircle2 className="w-4 h-4 mr-2" />
@@ -268,7 +263,11 @@ function ParentAttendanceView({ session }: { session: Session }) {
                       {student.name}
                     </CardTitle>
                     <p className="text-xs text-muted-foreground">
-                      {student.className} · {student.teacherName}
+                      {student.timeSlot
+                        ? student.timeSlot.charAt(0).toUpperCase() +
+                          student.timeSlot.slice(1)
+                        : student.className}{" "}
+                      · {student.teacherName}
                     </p>
                   </div>
                 </div>
@@ -345,39 +344,66 @@ function ParentAttendanceView({ session }: { session: Session }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function AttendancePage({ session }: AttendancePageProps) {
+export default function AttendancePage({
+  session,
+  setActivePage,
+}: AttendancePageProps) {
   // Parent: read-only view
   if (session.role === "parent") {
-    return <ParentAttendanceView session={session} />;
+    return (
+      <div className="space-y-4">
+        {setActivePage && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setActivePage("dashboard")}
+            className="gap-1.5 text-muted-foreground hover:text-foreground"
+            data-ocid="attendance.back_button"
+          >
+            <ArrowLeft className="w-4 h-4" /> Back
+          </Button>
+        )}
+        <ParentAttendanceView session={session} />
+      </div>
+    );
   }
 
-  return <AttendanceEditView session={session} />;
+  return (
+    <div className="space-y-4">
+      {setActivePage && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setActivePage("dashboard")}
+          className="gap-1.5 text-muted-foreground hover:text-foreground"
+          data-ocid="attendance.back_button"
+        >
+          <ArrowLeft className="w-4 h-4" /> Back
+        </Button>
+      )}
+      <AttendanceEditView session={session} />
+    </div>
+  );
 }
 
 function AttendanceEditView({ session }: { session: Session }) {
   const today = formatDate(new Date());
 
-  // Derive available classes from teachers in storage
-  const teachers = useMemo(() => getTeachers(), []);
-  const allClasses = useMemo(() => {
-    const seen = new Set<string>();
-    const list: string[] = [];
-    for (const t of teachers) {
-      if (!seen.has(t.className)) {
-        seen.add(t.className);
-        list.push(t.className);
-      }
-    }
-    return list;
-  }, [teachers]);
+  // Derive available sessions from students in storage
+  const SESSION_LIST_ATT = ["Morning", "Afternoon", "Evening"] as const;
+  const allClasses = SESSION_LIST_ATT as unknown as readonly string[];
 
-  // For teacher: class is fixed. For admin: dropdown
+  // For teacher: session is fixed. For admin: dropdown
   const isTeacher = session.role === "teacher";
-  const fixedClass = isTeacher ? (session.teacherClass ?? "") : null;
+  const teacherSessionSlot = session.teacherTimeSlot
+    ? session.teacherTimeSlot.charAt(0).toUpperCase() +
+      session.teacherTimeSlot.slice(1)
+    : null;
+  const fixedClass = isTeacher ? (teacherSessionSlot ?? "") : null;
 
   const [selectedDate, setSelectedDate] = useState(today);
   const [selectedClass, setSelectedClass] = useState<string>(
-    fixedClass ?? allClasses[0] ?? "",
+    fixedClass ?? "Morning",
   );
   const [attendance, setAttendance] = useState<
     Record<string, AttendanceStatus>
@@ -398,21 +424,24 @@ function AttendanceEditView({ session }: { session: Session }) {
     return init;
   });
   const [submitted, setSubmitted] = useState(false);
-  const [whatsAppAlerts, setWhatsAppAlerts] = useState<AbsentAlert[] | null>(
-    null,
-  );
+  // savedDate tracks which date's attendance was last saved (for bell persistence)
+  const [savedDate, setSavedDate] = useState<string | null>(null);
+  const [showSendAllModal, setShowSendAllModal] = useState(false);
 
-  // Re-load students list whenever class or date changes
+  // Re-load students list whenever session or date changes
   const allStudents = useMemo(() => getStudents(), []);
   const filtered = useMemo(
     () =>
       selectedClass
-        ? allStudents.filter((s) => s.className === selectedClass)
+        ? allStudents.filter(
+            (s) =>
+              (s.timeSlot ?? "").toLowerCase() === selectedClass.toLowerCase(),
+          )
         : allStudents,
     [allStudents, selectedClass],
   );
 
-  // Pre-fill attendance from storage when class/date changes
+  // Pre-fill attendance from storage when session/date changes
   const syncAttendanceFromStorage = (students: Student[], date: string) => {
     const existing = getAttendance();
     setAttendance((prev) => {
@@ -433,7 +462,9 @@ function AttendanceEditView({ session }: { session: Session }) {
 
   const handleClassChange = (cls: string) => {
     setSelectedClass(cls);
-    const students = allStudents.filter((s) => s.className === cls);
+    const students = allStudents.filter(
+      (s) => (s.timeSlot ?? "").toLowerCase() === cls.toLowerCase(),
+    );
     syncAttendanceFromStorage(students, selectedDate);
     setSubmitted(false);
   };
@@ -474,6 +505,7 @@ function AttendanceEditView({ session }: { session: Session }) {
 
     saveAttendance([...existing, ...newRecords]);
     setSubmitted(true);
+    setSavedDate(selectedDate);
 
     const presentCount = filtered.filter(
       (s) => attendance[s.id] === "Present",
@@ -483,18 +515,11 @@ function AttendanceEditView({ session }: { session: Session }) {
     );
 
     toast.success("Attendance saved successfully!", {
-      description: `${presentCount} present · ${absentStudents.length} absent — ${formatShortDate(selectedDate)}`,
+      description:
+        absentStudents.length > 0
+          ? `${presentCount} present · ${absentStudents.length} absent — click 🔔 to send reminders`
+          : `${presentCount} present · 0 absent — ${formatShortDate(selectedDate)}`,
     });
-
-    if (absentStudents.length > 0) {
-      const alerts: AbsentAlert[] = absentStudents.map((s) => ({
-        studentName: s.name,
-        fatherName: s.fatherName,
-        parentMobile: s.parentMobile,
-        message: `Assalamualaikum, aapka bachcha ${s.name} aaj absent hai. — Maktab Zaid Bin Sabit`,
-      }));
-      setWhatsAppAlerts(alerts);
-    }
   };
 
   const presentCount = filtered.filter(
@@ -507,6 +532,20 @@ function AttendanceEditView({ session }: { session: Session }) {
     filtered.length > 0
       ? Math.round((presentCount / filtered.length) * 100)
       : 0;
+
+  // Bell icon: show on absent students when attendance for current date was saved
+  const showBells = submitted && savedDate === selectedDate;
+
+  // Build absent alerts for "Send All Reminders"
+  const absentStudentsForBell = filtered.filter(
+    (s) => attendance[s.id] === "Absent",
+  );
+  const sendAllAlerts: AbsentAlert[] = absentStudentsForBell.map((s) => ({
+    studentName: s.name,
+    fatherName: s.fatherName,
+    parentMobile: s.parentMobile,
+    message: buildAbsenceMessage(s.name),
+  }));
 
   // History: read from storage for selected class
   type DayStats = {
@@ -540,19 +579,19 @@ function AttendanceEditView({ session }: { session: Session }) {
         <Card className="card-elevated border-border/60">
           <CardContent className="p-4">
             <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-              {/* Class selector — admin only; teacher sees fixed label */}
+              {/* Session selector — admin only; teacher sees fixed label */}
               <div className="flex flex-col sm:flex-row gap-3 flex-1 min-w-0">
                 <div className="flex-1 min-w-0">
                   <label
                     htmlFor="class-select-trigger"
                     className="text-xs font-semibold text-muted-foreground mb-1.5 block uppercase tracking-wider"
                   >
-                    Class
+                    Session
                   </label>
                   {isTeacher ? (
                     <div className="h-10 px-3 flex items-center rounded-md border border-input bg-muted/30 text-sm font-medium text-foreground">
                       <span className="text-muted-foreground mr-1.5">
-                        Your Class:
+                        Your Session:
                       </span>
                       {fixedClass || "—"}
                     </div>
@@ -566,7 +605,7 @@ function AttendanceEditView({ session }: { session: Session }) {
                         className="bg-background border-input h-10"
                         data-ocid="attendance.class.select"
                       >
-                        <SelectValue placeholder="Select class" />
+                        <SelectValue placeholder="Select session" />
                       </SelectTrigger>
                       <SelectContent>
                         {allClasses.map((c) => (
@@ -736,11 +775,24 @@ function AttendanceEditView({ session }: { session: Session }) {
                 <ClipboardList className="w-4 h-4 text-primary" />
                 {formatDisplayDate(selectedDate)}
               </CardTitle>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="secondary" className="text-xs font-medium">
                   <Users className="w-3 h-3 mr-1" />
                   {filtered.length} students
                 </Badge>
+                {showBells && absentStudentsForBell.length > 0 && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowSendAllModal(true)}
+                    data-ocid="attendance.send_all_button"
+                    className="h-7 text-xs gap-1.5 border-amber-500/40 text-amber-600 hover:bg-amber-50 hover:border-amber-500 font-semibold"
+                  >
+                    <Bell className="w-3.5 h-3.5" />
+                    Send All Reminders ({absentStudentsForBell.length} absent)
+                  </Button>
+                )}
               </div>
             </div>
           </CardHeader>
@@ -752,9 +804,11 @@ function AttendanceEditView({ session }: { session: Session }) {
                 data-ocid="attendance.empty_state"
               >
                 <Users className="w-10 h-10 mx-auto mb-3 opacity-30" />
-                <p className="text-sm font-medium">No students in this class</p>
+                <p className="text-sm font-medium">
+                  No students in this session
+                </p>
                 <p className="text-xs mt-1 opacity-70">
-                  Select a different class to see students
+                  Select a different session to see students
                 </p>
               </div>
             ) : (
@@ -781,62 +835,89 @@ function AttendanceEditView({ session }: { session: Session }) {
                       </span>
                     </div>
 
-                    {/* Name + class */}
+                    {/* Name + session */}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-foreground truncate">
                         {student.name}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {student.className} · Father: {student.fatherName}
+                        {student.timeSlot
+                          ? student.timeSlot.charAt(0).toUpperCase() +
+                            student.timeSlot.slice(1)
+                          : student.className}{" "}
+                        · Father: {student.fatherName}
                       </p>
                     </div>
 
-                    {/* Class badge — desktop only */}
+                    {/* Session badge — desktop only */}
                     <Badge
                       variant="outline"
                       className="text-xs hidden md:inline-flex border-primary/20 text-primary/80 bg-primary/5 flex-shrink-0"
                     >
-                      {student.className}
+                      {student.timeSlot
+                        ? student.timeSlot.charAt(0).toUpperCase() +
+                          student.timeSlot.slice(1)
+                        : student.className}
                     </Badge>
 
-                    {/* Toggle buttons */}
-                    <div
-                      className="flex gap-1.5 flex-shrink-0"
-                      data-ocid={`attendance.toggle.${i + 1}`}
-                    >
-                      <button
-                        type="button"
-                        aria-label="Mark Present"
-                        aria-pressed={isPresent}
-                        onClick={() => setStatus(student.id, "Present")}
-                        className={[
-                          "flex items-center gap-1.5 rounded-full text-xs font-semibold px-3 py-1.5",
-                          "transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success",
-                          isPresent
-                            ? "bg-success text-white shadow-md scale-105 ring-2 ring-success/30"
-                            : "bg-success/8 text-success/60 border border-success/20 hover:bg-success/15 hover:text-success hover:scale-102",
-                        ].join(" ")}
+                    {/* Toggle buttons + Bell icon */}
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <div
+                        className="flex gap-1.5"
+                        data-ocid={`attendance.toggle.${i + 1}`}
                       >
-                        <Check className="w-3.5 h-3.5 flex-shrink-0" />
-                        <span className="hidden sm:inline">Present</span>
-                      </button>
+                        <button
+                          type="button"
+                          aria-label="Mark Present"
+                          aria-pressed={isPresent}
+                          onClick={() => setStatus(student.id, "Present")}
+                          className={[
+                            "flex items-center gap-1.5 rounded-full text-xs font-semibold px-3 py-1.5",
+                            "transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success",
+                            isPresent
+                              ? "bg-success text-white shadow-md scale-105 ring-2 ring-success/30"
+                              : "bg-success/8 text-success/60 border border-success/20 hover:bg-success/15 hover:text-success hover:scale-102",
+                          ].join(" ")}
+                        >
+                          <Check className="w-3.5 h-3.5 flex-shrink-0" />
+                          <span className="hidden sm:inline">Present</span>
+                        </button>
 
-                      <button
-                        type="button"
-                        aria-label="Mark Absent"
-                        aria-pressed={isAbsent}
-                        onClick={() => setStatus(student.id, "Absent")}
-                        className={[
-                          "flex items-center gap-1.5 rounded-full text-xs font-semibold px-3 py-1.5",
-                          "transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive",
-                          isAbsent
-                            ? "bg-destructive text-white shadow-md scale-105 ring-2 ring-destructive/30"
-                            : "bg-destructive/8 text-destructive/60 border border-destructive/20 hover:bg-destructive/15 hover:text-destructive hover:scale-102",
-                        ].join(" ")}
-                      >
-                        <X className="w-3.5 h-3.5 flex-shrink-0" />
-                        <span className="hidden sm:inline">Absent</span>
-                      </button>
+                        <button
+                          type="button"
+                          aria-label="Mark Absent"
+                          aria-pressed={isAbsent}
+                          onClick={() => setStatus(student.id, "Absent")}
+                          className={[
+                            "flex items-center gap-1.5 rounded-full text-xs font-semibold px-3 py-1.5",
+                            "transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive",
+                            isAbsent
+                              ? "bg-destructive text-white shadow-md scale-105 ring-2 ring-destructive/30"
+                              : "bg-destructive/8 text-destructive/60 border border-destructive/20 hover:bg-destructive/15 hover:text-destructive hover:scale-102",
+                          ].join(" ")}
+                        >
+                          <X className="w-3.5 h-3.5 flex-shrink-0" />
+                          <span className="hidden sm:inline">Absent</span>
+                        </button>
+                      </div>
+
+                      {/* Bell icon — shown for absent students after attendance is saved */}
+                      {showBells && isAbsent && (
+                        <a
+                          href={buildWhatsAppUrl(
+                            student.parentMobile,
+                            buildAbsenceMessage(student.name),
+                          )}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          aria-label="Send absence reminder to parent"
+                          title="Send absence reminder to parent"
+                          data-ocid={`attendance.bell_button.${i + 1}`}
+                          className="w-8 h-8 flex items-center justify-center rounded-full bg-amber-100 text-amber-600 hover:bg-amber-500 hover:text-white transition-all duration-200 border border-amber-300 flex-shrink-0 ml-1"
+                        >
+                          <Bell className="w-3.5 h-3.5" />
+                        </a>
+                      )}
                     </div>
                   </div>
                 );
@@ -938,7 +1019,7 @@ function AttendanceEditView({ session }: { session: Session }) {
                             variant="outline"
                             className="text-xs border-primary/20 text-primary/80 bg-primary/5"
                           >
-                            {selectedClass || "All Classes"}
+                            {selectedClass || "All Sessions"}
                           </Badge>
                         </td>
                         <td className="px-4 py-3 text-right">
@@ -977,11 +1058,11 @@ function AttendanceEditView({ session }: { session: Session }) {
         </Card>
       </div>
 
-      {/* ── WhatsApp Alert Modal ─────────────────────────────────────── */}
-      {whatsAppAlerts && (
-        <WhatsAppModal
-          alerts={whatsAppAlerts}
-          onClose={() => setWhatsAppAlerts(null)}
+      {/* ── Send All Reminders Modal ─────────────────────────────────── */}
+      {showSendAllModal && sendAllAlerts.length > 0 && (
+        <SendAllModal
+          alerts={sendAllAlerts}
+          onClose={() => setShowSendAllModal(false)}
         />
       )}
     </>

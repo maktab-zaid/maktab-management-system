@@ -10,32 +10,11 @@ import {
   updateParentLastLogin,
 } from "./storage";
 
-export const TEACHER_NAMES = [
-  "Shaikh Tareef",
-  "Shaikh Zaid",
-  "Shaikh Irsad",
-  "Hafiz Sajid",
-  "Shaikh Adnan",
-] as const;
-
-export const CLASS_LIST = [
-  "Ibtidayyah",
-  "Nisf Qaidah",
-  "Mukammal Qaidah",
-  "Nisf Amma Para",
-  "Mukammal Amma Para",
-  "Nazra",
-  "Hifz",
-] as const;
-
-// Default teacher-class mapping for fallback
-const DEFAULT_TEACHER_CLASSES: Record<string, string> = {
-  "Shaikh Tareef": "Ibtidayyah",
-  "Shaikh Zaid": "Nisf Qaidah",
-  "Shaikh Irsad": "Mukammal Qaidah",
-  "Hafiz Sajid": "Nazra",
-  "Shaikh Adnan": "Hifz",
-};
+/**
+ * @deprecated Class-based system removed. Sessions are now used.
+ * Kept as empty array so any existing import doesn't break.
+ */
+export const CLASS_LIST: readonly string[] = [] as const;
 
 /**
  * Admin login — username: "admin", password: "1234"
@@ -53,36 +32,41 @@ export function loginAsAdmin(
 }
 
 /**
- * Teacher (Ustaad) login — find by name, returns session with assigned class.
- * Falls back to default class mapping if teacher not in localStorage yet.
+ * Teacher (Ustaad) login — name-only authentication.
+ *
+ * Looks up the teacher by name in the Admin-managed teacher list (localStorage).
+ * If no teachers exist or name is not found → login fails.
+ * No mobile number required.
  */
 export function loginAsTeacher(teacherName: string): Session | null {
   const trimmedName = teacherName.trim();
+  if (!trimmedName) return null;
 
-  // Check that name is one of the valid teacher names
-  const isValidTeacher = TEACHER_NAMES.some(
-    (n) => n.toLowerCase() === trimmedName.toLowerCase(),
-  );
-  if (!isValidTeacher) return null;
-
-  // Try to find in localStorage first
   const teachers = getTeachers();
+
+  // If no teachers added by Admin yet, reject login
+  if (teachers.length === 0) return null;
+
   const teacher = teachers.find(
     (t) => t.name.trim().toLowerCase() === trimmedName.toLowerCase(),
   );
+  if (!teacher) return null;
 
-  // Resolve canonical name from TEACHER_NAMES list
-  const canonicalName =
-    TEACHER_NAMES.find((n) => n.toLowerCase() === trimmedName.toLowerCase()) ??
-    trimmedName;
-
-  const assignedClass =
-    teacher?.className ?? DEFAULT_TEACHER_CLASSES[canonicalName] ?? "";
+  // Resolve all shifts for this teacher
+  let allShifts: string[] = [];
+  if (teacher.shifts && teacher.shifts.length > 0) {
+    allShifts = teacher.shifts;
+  } else if (Array.isArray(teacher.timeSlot)) {
+    allShifts = teacher.timeSlot;
+  } else if (teacher.timeSlot) {
+    allShifts = teacher.timeSlot.split(",").map((s) => s.trim());
+  }
 
   const session: Session = {
     role: "teacher",
-    name: canonicalName,
-    teacherClass: assignedClass,
+    name: teacher.name,
+    teacherTimeSlot: allShifts[0] as Session["teacherTimeSlot"],
+    teacherSessions: allShifts,
   };
   saveSession(session);
   return session;
@@ -90,23 +74,25 @@ export function loginAsTeacher(teacherName: string): Session | null {
 
 /**
  * Parent login — checks if any student has the given parentMobile.
- * Records last login time and activity on success.
+ * Records last login and activity on success.
  */
 export function loginAsParent(mobile: string): Session | null {
+  const trimmedMobile = mobile.trim();
+  if (!trimmedMobile) return null;
+
   const students = getStudents();
-  const linked = students.find((s) => s.parentMobile === mobile.trim());
+  const linked = students.find((s) => s.parentMobile === trimmedMobile);
   if (!linked) return null;
 
   const session: Session = {
     role: "parent",
     name: `Parent of ${linked.name}`,
-    mobile: mobile.trim(),
+    mobile: trimmedMobile,
   };
   saveSession(session);
 
-  // Track parent activity
-  updateParentLastLogin(mobile.trim(), linked.id, linked.name);
-  addParentActivity(mobile.trim(), "Login");
+  updateParentLastLogin(trimmedMobile, linked.id, linked.name);
+  addParentActivity(trimmedMobile, "Login");
 
   return session;
 }

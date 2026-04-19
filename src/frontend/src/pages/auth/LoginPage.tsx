@@ -47,11 +47,33 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [adminPassword, setAdminPassword] = useState("");
   const [teacherName, setTeacherName] = useState("");
   const [parentMobile, setParentMobile] = useState("");
+  const [parentLoginError, setParentLoginError] = useState<string | null>(null);
+  const [teacherLoginError, setTeacherLoginError] = useState<string | null>(
+    null,
+  );
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(
     null,
   );
 
   const teachers = getTeachers();
+  // Deduplicate by name for login dropdown — show each teacher once
+  const uniqueTeachers = teachers.filter(
+    (t, idx) => teachers.findIndex((x) => x.name === t.name) === idx,
+  );
+
+  // Get shifts for selected teacher
+  const selectedTeacherData = uniqueTeachers.find(
+    (t) => t.name === teacherName,
+  );
+  const selectedTeacherShifts: string[] = selectedTeacherData
+    ? selectedTeacherData.shifts && selectedTeacherData.shifts.length > 0
+      ? selectedTeacherData.shifts
+      : Array.isArray(selectedTeacherData.timeSlot)
+        ? selectedTeacherData.timeSlot
+        : selectedTeacherData.timeSlot
+          ? selectedTeacherData.timeSlot.split(",").map((s) => s.trim())
+          : []
+    : [];
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -74,13 +96,17 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
   const handleTeacherSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setTeacherLoginError(null);
     if (!teacherName) {
       toast.error("Please select your name");
       return;
     }
+
     const session = loginAsTeacher(teacherName);
     if (!session) {
-      toast.error("Teacher not found");
+      setTeacherLoginError(
+        "Ustaad not found. Please contact Admin to be added to the system.",
+      );
       return;
     }
     onLogin(session);
@@ -88,13 +114,16 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
   const handleParentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setParentLoginError(null);
     if (parentMobile.length !== 10) {
       toast.error("Please enter a valid 10-digit mobile number");
       return;
     }
     const session = loginAsParent(parentMobile);
     if (!session) {
-      toast.error("No student found with this mobile number");
+      setParentLoginError(
+        "Login Failed. Mobile number not found in student records.",
+      );
       return;
     }
     onLogin(session);
@@ -272,25 +301,84 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                     >
                       Select Your Name
                     </Label>
-                    <select
-                      id="teacher-select"
-                      data-ocid="login.teacher.select"
-                      value={teacherName}
-                      onChange={(e) => setTeacherName(e.target.value)}
-                      className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                    >
-                      <option value="">-- Select Ustaad --</option>
-                      {teachers.map((t) => (
-                        <option key={t.name} value={t.name}>
-                          {t.name} ({t.className})
-                        </option>
-                      ))}
-                    </select>
+                    {uniqueTeachers.length === 0 ? (
+                      <div className="flex items-center gap-2 rounded-lg bg-muted/50 border border-border px-3 py-3">
+                        <GraduationCap className="w-4 h-4 text-muted-foreground shrink-0" />
+                        <p className="text-sm text-muted-foreground">
+                          No Ustaad added by Admin yet.
+                        </p>
+                      </div>
+                    ) : (
+                      <select
+                        id="teacher-select"
+                        data-ocid="login.teacher.select"
+                        value={teacherName}
+                        onChange={(e) => {
+                          setTeacherName(e.target.value);
+                          setTeacherLoginError(null);
+                        }}
+                        className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                      >
+                        <option value="">-- Select Ustaad --</option>
+                        {uniqueTeachers.map((t) => {
+                          const shifts =
+                            t.shifts && t.shifts.length > 0
+                              ? t.shifts
+                              : Array.isArray(t.timeSlot)
+                                ? t.timeSlot
+                                : t.timeSlot
+                                  ? t.timeSlot.split(",").map((s) => s.trim())
+                                  : [];
+                          const shiftDisplay =
+                            shifts.length > 0
+                              ? ` (${shifts.map((s) => s.charAt(0).toUpperCase() + s.slice(1)).join(", ")})`
+                              : "";
+                          return (
+                            <option key={t.id} value={t.name}>
+                              {t.name}
+                              {shiftDisplay}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    )}
                   </div>
+
+                  {/* Show all assigned shifts for selected teacher */}
+                  {teacherName && selectedTeacherShifts.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 px-1">
+                      <span className="text-xs text-muted-foreground">
+                        Assigned shifts:
+                      </span>
+                      {selectedTeacherShifts.map((shift) => (
+                        <span
+                          key={shift}
+                          className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20"
+                        >
+                          {shift.charAt(0).toUpperCase() + shift.slice(1)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {teacherLoginError && (
+                    <div
+                      data-ocid="login.teacher.error_state"
+                      className="flex items-start gap-2 rounded-lg bg-destructive/10 border border-destructive/30 px-3 py-2.5"
+                      role="alert"
+                    >
+                      <ShieldX className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+                      <p className="text-sm text-destructive leading-snug">
+                        {teacherLoginError}
+                      </p>
+                    </div>
+                  )}
+
                   <Button
                     data-ocid="login.teacher.submit_button"
                     type="submit"
-                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold h-11"
+                    disabled={uniqueTeachers.length === 0}
+                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold h-11 disabled:opacity-50"
                   >
                     Login as Ustaad
                   </Button>
@@ -324,11 +412,12 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                         inputMode="numeric"
                         placeholder="10-digit mobile number"
                         value={parentMobile}
-                        onChange={(e) =>
+                        onChange={(e) => {
                           setParentMobile(
                             e.target.value.replace(/\D/g, "").slice(0, 10),
-                          )
-                        }
+                          );
+                          setParentLoginError(null);
+                        }}
                         maxLength={10}
                         className="pl-9 font-mono tracking-wider"
                         autoComplete="tel"
@@ -342,6 +431,18 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                       admission
                     </p>
                   </div>
+                  {parentLoginError && (
+                    <div
+                      data-ocid="login.parent.error_state"
+                      className="flex items-start gap-2 rounded-lg bg-destructive/10 border border-destructive/30 px-3 py-2.5"
+                      role="alert"
+                    >
+                      <ShieldX className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+                      <p className="text-sm text-destructive leading-snug">
+                        {parentLoginError}
+                      </p>
+                    </div>
+                  )}
                   <Button
                     data-ocid="login.parent.submit_button"
                     type="submit"

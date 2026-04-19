@@ -47,6 +47,7 @@ export function MainLayout({
           sidebarCollapsed={sidebarCollapsed}
           session={session}
           onLogout={onLogout}
+          onNavigate={onNavigate}
         />
 
         {/* Page content — padding below fixed header */}

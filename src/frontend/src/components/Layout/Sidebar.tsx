@@ -6,10 +6,19 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
+  Clock,
+  FileText,
   GraduationCap,
   Image,
+  Info,
   LayoutDashboard,
+  Moon,
   Phone,
+  Settings,
+  Sun,
+  User,
+  UserCheck,
   UserCog,
   Users,
   Wallet,
@@ -20,39 +29,51 @@ interface NavItem {
   id: AppPage;
   label: string;
   icon: React.ElementType;
-  roles: Array<"admin" | "teacher" | "parent">;
 }
 
-const ALL_NAV_ITEMS: NavItem[] = [
-  {
-    id: "dashboard",
-    label: "Dashboard",
-    icon: LayoutDashboard,
-    roles: ["admin", "teacher", "parent"],
-  },
-  { id: "students", label: "Students", icon: Users, roles: ["admin"] },
-  {
-    id: "attendance",
-    label: "Attendance",
-    icon: CalendarDays,
-    roles: ["admin", "teacher"],
-  },
-  { id: "fees", label: "Fees", icon: Wallet, roles: ["admin", "teacher"] },
-  { id: "sabak", label: "Sabak", icon: BookOpen, roles: ["admin", "teacher"] },
-  {
-    id: "notices",
-    label: "Notices",
-    icon: Bell,
-    roles: ["admin", "teacher", "parent"],
-  },
-  { id: "gallery", label: "Gallery", icon: Image, roles: ["admin", "parent"] },
-  { id: "contact", label: "Contact", icon: Phone, roles: ["admin", "parent"] },
-  {
-    id: "manage-teachers",
-    label: "Manage Teachers",
-    icon: UserCog,
-    roles: ["admin"],
-  },
+const ADMIN_NAV: NavItem[] = [
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "students", label: "Students", icon: Users },
+  { id: "activity-log", label: "Activity Log", icon: ClipboardList },
+  { id: "attendance", label: "Attendance", icon: CalendarDays },
+  { id: "fees", label: "Fees", icon: Wallet },
+  { id: "sabak", label: "Sabak", icon: BookOpen },
+  { id: "notices", label: "Notices", icon: Bell },
+  { id: "gallery", label: "Gallery", icon: Image },
+  { id: "contact", label: "Contact", icon: Phone },
+  { id: "manage-teachers", label: "Manage Teachers", icon: UserCog },
+  { id: "ustaad-attendance", label: "Ustaad Attendance", icon: UserCheck },
+  { id: "monthly-report", label: "Monthly Reports", icon: FileText },
+  { id: "admin-profile", label: "Admin Profile", icon: User },
+  { id: "settings", label: "Settings", icon: Settings },
+  { id: "admin-about-us", label: "About Us", icon: Info },
+];
+
+const TEACHER_NAV: NavItem[] = [
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "ustaad-morning", label: "Morning", icon: Sun },
+  { id: "ustaad-afternoon", label: "Afternoon", icon: Clock },
+  { id: "ustaad-evening", label: "Evening", icon: Moon },
+  { id: "ustaad-gallery", label: "Gallery", icon: Image },
+  { id: "students", label: "Students", icon: Users },
+  { id: "attendance", label: "Attendance", icon: CalendarDays },
+  { id: "fees", label: "Fees", icon: Wallet },
+  { id: "sabak", label: "Sabak", icon: BookOpen },
+  { id: "notices", label: "Notices", icon: Bell },
+  { id: "ustaad-profile", label: "Profile", icon: User },
+  { id: "about-us", label: "About Us", icon: Info },
+];
+
+const PARENT_NAV: NavItem[] = [
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "parent-profile", label: "Profile", icon: User },
+  { id: "gallery", label: "Gallery", icon: Image },
+  { id: "notices", label: "Notices", icon: Bell },
+  { id: "attendance", label: "Attendance", icon: CalendarDays },
+  { id: "fees", label: "Fees", icon: Wallet },
+  { id: "sabak", label: "Sabak", icon: BookOpen },
+  { id: "contact", label: "Contact", icon: Phone },
+  { id: "about-us", label: "About Us", icon: Info },
 ];
 
 interface SidebarProps {
@@ -76,9 +97,12 @@ export function Sidebar({
 }: SidebarProps) {
   const role = session?.role ?? "admin";
 
-  const visibleItems = ALL_NAV_ITEMS.filter((item) =>
-    item.roles.includes(role),
-  );
+  const navItems =
+    role === "admin"
+      ? ADMIN_NAV
+      : role === "teacher"
+        ? TEACHER_NAV
+        : PARENT_NAV;
 
   const handleNavClick = (page: AppPage) => {
     onNavigate(page);
@@ -166,11 +190,11 @@ export function Sidebar({
 
         {/* Navigation */}
         <nav className="relative flex-1 overflow-y-auto overflow-x-hidden px-2 py-4 space-y-1">
-          {visibleItems.map(({ id, label, icon: Icon }) => {
+          {navItems.map(({ id, label, icon: Icon }) => {
             const isActive = activePage === id;
             return (
               <button
-                key={id}
+                key={`${id}-${label}`}
                 type="button"
                 onClick={() => handleNavClick(id)}
                 title={collapsed ? label : undefined}
@@ -205,11 +229,10 @@ export function Sidebar({
         <div className="relative px-2 py-3 border-t border-white/20 space-y-2">
           {!collapsed && (
             <p className="text-xs text-white/50 text-center px-2">
-              Academic Year 2025–2026
+              Academic Year 2026–27
             </p>
           )}
 
-          {/* Desktop collapse button */}
           <button
             type="button"
             onClick={onToggleCollapse}

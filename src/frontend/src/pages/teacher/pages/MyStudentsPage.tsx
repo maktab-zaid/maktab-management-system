@@ -1,35 +1,51 @@
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { GraduationCap } from "lucide-react";
+import { ArrowLeft, GraduationCap } from "lucide-react";
 import { useTeacherStudents } from "../../../hooks/useGoogleSheets";
 
 interface Props {
   teacherName: string;
+  onBack?: () => void;
 }
 
-export default function MyStudentsPage({ teacherName }: Props) {
+export default function MyStudentsPage({ teacherName, onBack }: Props) {
   const { data: students = [], isLoading } = useTeacherStudents(teacherName);
 
   return (
     <div data-ocid="teacher.students.page" className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">My Students</h1>
-        <p className="text-muted-foreground text-sm">
-          {teacherName
-            ? `Students assigned to ${teacherName}`
-            : "Your assigned students"}
-          {!isLoading && (
-            <span className="ml-2">
-              <Badge
-                variant="outline"
-                className="text-xs bg-primary/5 text-primary border-primary/20"
-              >
-                {students.length} from Google Sheets
-              </Badge>
-            </span>
-          )}
-        </p>
+      <div className="flex items-center gap-3">
+        {onBack && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onBack}
+            data-ocid="teacher.students.back_button"
+            className="gap-1.5 text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </Button>
+        )}
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">My Students</h1>
+          <p className="text-muted-foreground text-sm">
+            {teacherName
+              ? `Students assigned to ${teacherName}`
+              : "Your assigned students"}
+            {!isLoading && (
+              <span className="ml-2">
+                <Badge
+                  variant="outline"
+                  className="text-xs bg-primary/5 text-primary border-primary/20"
+                >
+                  {students.length} from Google Sheets
+                </Badge>
+              </span>
+            )}
+          </p>
+        </div>
       </div>
 
       {isLoading ? (

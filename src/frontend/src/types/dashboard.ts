@@ -7,7 +7,21 @@ export type AppPage =
   | "notices"
   | "gallery"
   | "contact"
-  | "manage-teachers";
+  | "manage-teachers"
+  | "settings"
+  | "admin-profile"
+  | "ustaad-attendance"
+  | "monthly-report"
+  | "ustaad-morning"
+  | "ustaad-afternoon"
+  | "ustaad-evening"
+  | "ustaad-gallery"
+  | "about-us"
+  | "admin-about-us"
+  | "notifications"
+  | "activity-log"
+  | "ustaad-profile"
+  | "parent-profile";
 
 export interface Student {
   id: string;
@@ -53,13 +67,23 @@ export interface SabakRecord {
   class: string;
   teacher: string;
   currentLesson: string;
-  surahName: string;
-  completedAyahs: number;
-  totalAyahs: number;
-  progressPercent: number;
-  grade: SabakGrade;
-  teacherNotes: string;
+  surahName?: string;
+  completedAyahs?: number;
+  totalAyahs?: number;
+  /** Current ayat number for Quran/Hifz display (e.g. Surah Al-Baqarah — Ayat 204) */
+  ayatNumber?: number;
+  progressPercent?: number;
+  grade?: SabakGrade;
+  teacherNotes?: string;
   lastUpdated: string;
+  // 7 manual sabak sections
+  qaida?: string;
+  ammaPara?: string;
+  quran?: string;
+  dua?: string;
+  hadees?: string;
+  urdu?: string;
+  hifz?: string;
 }
 
 export interface Notice {

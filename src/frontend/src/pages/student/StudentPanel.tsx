@@ -5,7 +5,9 @@ import {
   BookOpen,
   CalendarDays,
   ChevronRight,
+  CreditCard,
   DollarSign,
+  Info,
   LogOut,
   Menu,
   User,
@@ -14,8 +16,10 @@ import {
 import { motion } from "motion/react";
 import { useState } from "react";
 import type { StudentPage } from "../../types";
+import AboutUsPage from "./pages/AboutUsPage";
 import StudentAttendancePage from "./pages/StudentAttendancePage";
 import StudentFeesPage from "./pages/StudentFeesPage";
+import StudentIdCardPage from "./pages/StudentIdCardPage";
 import StudentProfilePage from "./pages/StudentProfilePage";
 import StudentProgressPage from "./pages/StudentProgressPage";
 
@@ -24,7 +28,13 @@ interface Props {
   mobileNumber: string;
 }
 
-const navItems: { id: StudentPage; label: string; icon: React.ReactNode }[] = [
+type ExtendedStudentPage = StudentPage | "about-us" | "idcard";
+
+const navItems: {
+  id: ExtendedStudentPage;
+  label: string;
+  icon: React.ReactNode;
+}[] = [
   { id: "profile", label: "My Profile", icon: <User className="w-4 h-4" /> },
   {
     id: "attendance",
@@ -33,10 +43,12 @@ const navItems: { id: StudentPage; label: string; icon: React.ReactNode }[] = [
   },
   { id: "fees", label: "Fees", icon: <DollarSign className="w-4 h-4" /> },
   { id: "progress", label: "Progress", icon: <BookOpen className="w-4 h-4" /> },
+  { id: "idcard", label: "ID Card", icon: <CreditCard className="w-4 h-4" /> },
+  { id: "about-us", label: "About Us", icon: <Info className="w-4 h-4" /> },
 ];
 
 export default function StudentPanel({ onLogout, mobileNumber }: Props) {
-  const [activePage, setActivePage] = useState<StudentPage>("profile");
+  const [activePage, setActivePage] = useState<ExtendedStudentPage>("profile");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const currentNav = navItems.find((n) => n.id === activePage);
@@ -51,6 +63,10 @@ export default function StudentPanel({ onLogout, mobileNumber }: Props) {
         return <StudentFeesPage mobileNumber={mobileNumber} />;
       case "progress":
         return <StudentProgressPage mobileNumber={mobileNumber} />;
+      case "idcard":
+        return <StudentIdCardPage mobileNumber={mobileNumber} />;
+      case "about-us":
+        return <AboutUsPage onBack={() => setActivePage("profile")} />;
       default:
         return <StudentProfilePage mobileNumber={mobileNumber} />;
     }

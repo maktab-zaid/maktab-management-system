@@ -3,17 +3,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { Check, Loader2, X } from "lucide-react";
+import { ArrowLeft, Check, Loader2, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
+  AttendanceStatus,
   useMarkAttendance,
   useStudentsByTeacher,
 } from "../../../hooks/useQueries";
-import { AttendanceStatus } from "../../../hooks/useQueries";
 
 interface Props {
   teacherId: string;
+  onBack?: () => void;
 }
 
 function today() {
@@ -21,7 +22,7 @@ function today() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-export default function TeacherAttendancePage({ teacherId }: Props) {
+export default function TeacherAttendancePage({ teacherId, onBack }: Props) {
   const [selectedDate, setSelectedDate] = useState(today());
   const { data: students = [], isLoading: studentsLoading } =
     useStudentsByTeacher(teacherId);
@@ -66,11 +67,27 @@ export default function TeacherAttendancePage({ teacherId }: Props) {
 
   return (
     <div data-ocid="teacher.attendance.page" className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Daily Attendance</h1>
-        <p className="text-muted-foreground text-sm">
-          Mark attendance for your students
-        </p>
+      <div className="flex items-center gap-3">
+        {onBack && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onBack}
+            data-ocid="teacher.attendance.back_button"
+            className="gap-1.5 text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </Button>
+        )}
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">
+            Daily Attendance
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            Mark attendance for your students
+          </p>
+        </div>
       </div>
 
       <div className="flex items-end gap-4">

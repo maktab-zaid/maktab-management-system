@@ -1,26 +1,25 @@
 {
-  "overview": "A fully functional Madrasa Management System with role-based login for Admin, Teacher (Ustaad), and Parent. Features attendance tracking with WhatsApp alerts, fee management with reminders, Sabak progress tracking, notices, gallery, and parent contact system — all powered by local storage for instant persistence.",
+  "overview": "Maktab Zaid Bin Sabit Management System — a comprehensive Islamic school management platform with role-based access for Admin, Ustaad (teachers), and Parents. Manage students, attendance, fees, sabak progress, and reports.",
   "features": [
-    "Role-based login: Admin (full access), Teacher (class-scoped), Parent (mobile number, read-only)",
-    "Student-parent linking via mobile number",
-    "Attendance marking with WhatsApp alert simulation for absent students",
-    "Monthly fee tracking with Paid/Pending status and WhatsApp reminder button",
-    "Sabak/Quran progress tracking with lesson name, progress %, and remarks",
-    "Notice board: Admin creates notices, all users read; WhatsApp share button",
-    "Gallery: Admin uploads (UI), all users view in grid layout",
-    "Parent contact system with Call and WhatsApp buttons",
-    "All data persists in localStorage — no reset on refresh",
-    "Sidebar text visibility fix and dropdown z-index fix"
+    "Role-based login for Admin, Ustaad, and Parents",
+    "Admin dashboard with Morning/Afternoon/Evening student filters",
+    "Ustaad time-slot assignment (Morning, Afternoon, Maghrib)",
+    "Admin Ustaad attendance tracking",
+    "Monthly PDF report downloads per class and per Ustaad",
+    "Editable Admin profile and settings with dark/light mode",
+    "Ustaad panel with strict permissions and sabak categories",
+    "Ustaad notifications center with View All page",
+    "Parent About Us page with mission, vision, and upcoming courses",
+    "Academic Year 2026–27 global setting"
   ],
-  "category": "education",
+  "category": "productivity",
   "tags": [
     "madrasa",
     "school-management",
-    "education",
-    "islamic",
+    "islamic-education",
     "attendance",
     "fees",
-    "dashboard"
+    "reports"
   ],
-  "last_updated": "2026-04-17T10:26:19.416Z"
+  "last_updated": "2026-04-18T06:38:54.751Z"
 }

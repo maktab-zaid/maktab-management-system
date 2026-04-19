@@ -28,24 +28,17 @@ import {
 } from "@/lib/storage";
 import {
   CheckCircle,
+  Clock,
   IndianRupee,
   MessageCircle,
+  Moon,
   Pencil,
   Plus,
+  Sun,
   Trash2,
   Users,
 } from "lucide-react";
 import { useState } from "react";
-
-const CLASS_LIST = [
-  "Ibtidayyah",
-  "Nisf Qaidah",
-  "Mukammal Qaidah",
-  "Nisf Amma Para",
-  "Mukammal Amma Para",
-  "Nazra",
-  "Hifz",
-] as const;
 
 const MONTHS = [
   "January",
@@ -68,6 +61,26 @@ const YEARS = [
   String(CURRENT_YEAR),
   String(CURRENT_YEAR + 1),
 ];
+
+const SESSION_LIST = ["Morning", "Afternoon", "Evening"] as const;
+
+function sessionIcon(slot?: string) {
+  const lower = (slot ?? "").toLowerCase();
+  if (lower === "morning")
+    return <Sun className="w-3.5 h-3.5 text-yellow-500" />;
+  if (lower === "afternoon")
+    return <Clock className="w-3.5 h-3.5 text-orange-500" />;
+  return <Moon className="w-3.5 h-3.5 text-indigo-500" />;
+}
+
+function sessionBadgeClass(slot?: string) {
+  const lower = (slot ?? "").toLowerCase();
+  if (lower === "morning")
+    return "bg-yellow-50 border-yellow-200 text-yellow-700 dark:bg-yellow-950/20 dark:border-yellow-800 dark:text-yellow-400";
+  if (lower === "afternoon")
+    return "bg-orange-50 border-orange-200 text-orange-700 dark:bg-orange-950/20 dark:border-orange-800 dark:text-orange-400";
+  return "bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/20 dark:border-indigo-800 dark:text-indigo-400";
+}
 
 // ── Sub-components ───────────────────────────────────────────────────────────
 
@@ -115,9 +128,9 @@ export default function ManageTeachersPage() {
   const [newTeacher, setNewTeacher] = useState({
     name: "",
     mobile: "",
-    className: "",
+    timeSlot: "",
   });
-  const [editClassName, setEditClassName] = useState("");
+  const [editTimeSlot, setEditTimeSlot] = useState("");
 
   // Add salary form
   const [newSalary, setNewSalary] = useState({
@@ -130,29 +143,42 @@ export default function ManageTeachersPage() {
   // ── Teacher handlers ────────────────────────────────────────────────────────
 
   const handleAddTeacher = () => {
-    if (!newTeacher.name.trim() || !newTeacher.className) return;
+    if (!newTeacher.name.trim() || !newTeacher.timeSlot) return;
     const teacher: Teacher = {
       id: createId(),
       name: newTeacher.name.trim(),
       mobile: newTeacher.mobile.trim(),
-      className: newTeacher.className,
+      className: newTeacher.timeSlot,
+      timeSlot: newTeacher.timeSlot.toLowerCase() as
+        | "morning"
+        | "afternoon"
+        | "evening",
     };
     const updated = [...teachers, teacher];
     saveTeachers(updated);
     setTeachers(updated);
-    setNewTeacher({ name: "", mobile: "", className: "" });
+    setNewTeacher({ name: "", mobile: "", timeSlot: "" });
     setAddTeacherOpen(false);
   };
 
   const handleEditClass = () => {
-    if (!editClassTeacher || !editClassName) return;
+    if (!editClassTeacher || !editTimeSlot) return;
     const updated = teachers.map((t) =>
-      t.id === editClassTeacher.id ? { ...t, className: editClassName } : t,
+      t.id === editClassTeacher.id
+        ? {
+            ...t,
+            className: editTimeSlot,
+            timeSlot: editTimeSlot.toLowerCase() as
+              | "morning"
+              | "afternoon"
+              | "evening",
+          }
+        : t,
     );
     saveTeachers(updated);
     setTeachers(updated);
     setEditClassTeacher(null);
-    setEditClassName("");
+    setEditTimeSlot("");
   };
 
   const handleDeleteTeacher = () => {
@@ -209,15 +235,26 @@ export default function ManageTeachersPage() {
     });
   };
 
+  // ── Session-grouped teacher list ────────────────────────────────────────────
+
+  const grouped = SESSION_LIST.map((session) => ({
+    session,
+    teachers: teachers.filter((t) => {
+      const ts = t.timeSlot ?? "";
+      const tsStr = Array.isArray(ts) ? ts.join(",") : ts;
+      return tsStr.toLowerCase().includes(session.toLowerCase());
+    }),
+  }));
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6 p-4 md:p-6" data-ocid="manage_teachers.page">
-      {/* ── Section 1: Teacher List ── */}
+      {/* ── Section 1: Session-Grouped Teacher List ── */}
       <div className="bg-card rounded-xl border border-border shadow-soft overflow-hidden">
         <SectionHeader
           icon={Users}
-          title="Teacher List"
+          title="Ustaad List by Session"
           action={
             <Button
               size="sm"
@@ -225,93 +262,138 @@ export default function ManageTeachersPage() {
               onClick={() => setAddTeacherOpen(true)}
               data-ocid="manage_teachers.add_teacher_button"
             >
-              <Plus className="w-3.5 h-3.5 mr-1" /> Add Teacher
+              <Plus className="w-3.5 h-3.5 mr-1" /> Add Ustaad
             </Button>
           }
         />
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-muted/40 border-b border-border">
-                <th className="text-left px-4 py-3 font-semibold text-foreground">
-                  #
-                </th>
-                <th className="text-left px-4 py-3 font-semibold text-foreground">
-                  Name
-                </th>
-                <th className="text-left px-4 py-3 font-semibold text-foreground">
-                  Assigned Class
-                </th>
-                <th className="text-left px-4 py-3 font-semibold text-foreground">
-                  Mobile
-                </th>
-                <th className="text-left px-4 py-3 font-semibold text-foreground">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {teachers.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={5}
-                    className="text-center py-10 text-muted-foreground"
-                    data-ocid="manage_teachers.teachers.empty_state"
-                  >
-                    No teachers added yet. Click "Add Teacher" to begin.
-                  </td>
-                </tr>
+        <div className="divide-y divide-border">
+          {grouped.map(({ session, teachers: sessionTeachers }) => (
+            <div key={session}>
+              {/* Session header row */}
+              <div className="flex items-center gap-2 px-5 py-2.5 bg-muted/30">
+                {sessionIcon(session)}
+                <span className="text-xs font-bold uppercase tracking-wider text-foreground">
+                  {session}
+                </span>
+                <span className="ml-auto text-xs text-muted-foreground font-medium">
+                  {sessionTeachers.length} Ustaad
+                  {sessionTeachers.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+              {sessionTeachers.length === 0 ? (
+                <div className="px-5 py-4 text-xs text-muted-foreground italic">
+                  No Ustaads assigned to {session} yet.
+                </div>
               ) : (
-                teachers.map((teacher, idx) => (
-                  <tr
-                    key={teacher.id}
-                    className="border-b border-border/50 hover:bg-muted/20 transition-colors"
-                    data-ocid={`manage_teachers.teachers.item.${idx + 1}`}
-                  >
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {idx + 1}
-                    </td>
-                    <td className="px-4 py-3 font-medium text-foreground">
-                      {teacher.name}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge className="bg-primary/10 text-primary border border-primary/20 text-xs font-medium">
-                        {teacher.className || "—"}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {teacher.mobile || "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 px-2.5 text-xs border-primary/30 text-primary hover:bg-primary/5"
-                          onClick={() => {
-                            setEditClassTeacher(teacher);
-                            setEditClassName(teacher.className ?? "");
-                          }}
-                          data-ocid={`manage_teachers.teachers.edit_button.${idx + 1}`}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-muted/20 border-b border-border/60">
+                        <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground text-xs">
+                          #
+                        </th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground text-xs">
+                          Name
+                        </th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground text-xs">
+                          Session
+                        </th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground text-xs">
+                          Mobile
+                        </th>
+                        <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground text-xs">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sessionTeachers.map((teacher, idx) => (
+                        <tr
+                          key={teacher.id}
+                          className="border-b border-border/40 hover:bg-muted/20 transition-colors"
+                          data-ocid={`manage_teachers.teachers.item.${teachers.indexOf(teacher) + 1}`}
                         >
-                          <Pencil className="w-3 h-3 mr-1" /> Edit Class
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 px-2.5 text-xs border-destructive/30 text-destructive hover:bg-destructive/5"
-                          onClick={() => setDeleteTeacher(teacher)}
-                          data-ocid={`manage_teachers.teachers.delete_button.${idx + 1}`}
-                        >
-                          <Trash2 className="w-3 h-3 mr-1" /> Remove
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                          <td className="px-4 py-3 text-muted-foreground text-xs">
+                            {idx + 1}
+                          </td>
+                          <td className="px-4 py-3 font-medium text-foreground">
+                            {teacher.name}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-xs font-medium ${sessionBadgeClass(Array.isArray(teacher.timeSlot) ? teacher.timeSlot[0] : teacher.timeSlot)}`}
+                            >
+                              {sessionIcon(
+                                Array.isArray(teacher.timeSlot)
+                                  ? teacher.timeSlot[0]
+                                  : teacher.timeSlot,
+                              )}
+                              {teacher.timeSlot
+                                ? (Array.isArray(teacher.timeSlot)
+                                    ? teacher.timeSlot.join(", ")
+                                    : teacher.timeSlot
+                                  )
+                                    .charAt(0)
+                                    .toUpperCase() +
+                                  (Array.isArray(teacher.timeSlot)
+                                    ? teacher.timeSlot.join(", ")
+                                    : teacher.timeSlot
+                                  ).slice(1)
+                                : "—"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-muted-foreground text-sm">
+                            {teacher.mobile || "—"}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2.5 text-xs border-primary/30 text-primary hover:bg-primary/5"
+                                onClick={() => {
+                                  setEditClassTeacher(teacher);
+                                  const tsStr = Array.isArray(teacher.timeSlot)
+                                    ? teacher.timeSlot[0]
+                                    : teacher.timeSlot;
+                                  setEditTimeSlot(
+                                    tsStr
+                                      ? tsStr.charAt(0).toUpperCase() +
+                                          tsStr.slice(1)
+                                      : "",
+                                  );
+                                }}
+                                data-ocid={`manage_teachers.teachers.edit_button.${teachers.indexOf(teacher) + 1}`}
+                              >
+                                <Pencil className="w-3 h-3 mr-1" /> Edit Slot
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2.5 text-xs border-destructive/30 text-destructive hover:bg-destructive/5"
+                                onClick={() => setDeleteTeacher(teacher)}
+                                data-ocid={`manage_teachers.teachers.delete_button.${teachers.indexOf(teacher) + 1}`}
+                              >
+                                <Trash2 className="w-3 h-3 mr-1" /> Remove
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
-            </tbody>
-          </table>
+            </div>
+          ))}
+          {teachers.length === 0 && (
+            <div
+              className="px-5 py-10 text-center text-muted-foreground text-sm"
+              data-ocid="manage_teachers.teachers.empty_state"
+            >
+              No Ustaads added yet. Click "Add Ustaad" to begin.
+            </div>
+          )}
         </div>
       </div>
 
@@ -518,7 +600,7 @@ export default function ManageTeachersPage() {
         >
           <DialogHeader>
             <DialogTitle className="text-foreground">
-              Add New Teacher
+              Add New Ustaad
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-1">
@@ -527,11 +609,11 @@ export default function ManageTeachersPage() {
                 htmlFor="t-name"
                 className="text-sm font-medium text-foreground"
               >
-                Teacher Name <span className="text-destructive">*</span>
+                Ustaad Name <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="t-name"
-                placeholder="e.g. Shaikh Abdullah"
+                placeholder="e.g. Hafiz Abdullah"
                 value={newTeacher.name}
                 onChange={(e) =>
                   setNewTeacher((p) => ({ ...p, name: e.target.value }))
@@ -560,24 +642,24 @@ export default function ManageTeachersPage() {
             </div>
             <div>
               <Label className="text-sm font-medium text-foreground">
-                Assigned Class <span className="text-destructive">*</span>
+                Session <span className="text-destructive">*</span>
               </Label>
               <Select
-                value={newTeacher.className}
+                value={newTeacher.timeSlot}
                 onValueChange={(v) =>
-                  setNewTeacher((p) => ({ ...p, className: v }))
+                  setNewTeacher((p) => ({ ...p, timeSlot: v }))
                 }
               >
                 <SelectTrigger
                   className="mt-1"
                   data-ocid="manage_teachers.add_teacher_class_select"
                 >
-                  <SelectValue placeholder="Select class" />
+                  <SelectValue placeholder="Select session" />
                 </SelectTrigger>
                 <SelectContent>
-                  {CLASS_LIST.map((cls) => (
-                    <SelectItem key={cls} value={cls}>
-                      {cls}
+                  {SESSION_LIST.map((slot) => (
+                    <SelectItem key={slot} value={slot}>
+                      {slot}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -593,18 +675,18 @@ export default function ManageTeachersPage() {
               </Button>
               <Button
                 onClick={handleAddTeacher}
-                disabled={!newTeacher.name.trim() || !newTeacher.className}
+                disabled={!newTeacher.name.trim() || !newTeacher.timeSlot}
                 className="bg-primary hover:bg-primary/90"
                 data-ocid="manage_teachers.add_teacher_submit_button"
               >
-                Add Teacher
+                Add Ustaad
               </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* ── Modal: Edit Class ── */}
+      {/* ── Modal: Edit Session ── */}
       <Dialog
         open={!!editClassTeacher}
         onOpenChange={(o) => {
@@ -617,25 +699,25 @@ export default function ManageTeachersPage() {
         >
           <DialogHeader>
             <DialogTitle className="text-foreground">
-              Edit Class — {editClassTeacher?.name}
+              Edit Session — {editClassTeacher?.name}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-1">
             <div>
               <Label className="text-sm font-medium text-foreground">
-                New Class Assignment
+                New Session
               </Label>
-              <Select value={editClassName} onValueChange={setEditClassName}>
+              <Select value={editTimeSlot} onValueChange={setEditTimeSlot}>
                 <SelectTrigger
                   className="mt-1"
                   data-ocid="manage_teachers.edit_class_select"
                 >
-                  <SelectValue placeholder="Select class" />
+                  <SelectValue placeholder="Select session" />
                 </SelectTrigger>
                 <SelectContent>
-                  {CLASS_LIST.map((cls) => (
-                    <SelectItem key={cls} value={cls}>
-                      {cls}
+                  {SESSION_LIST.map((slot) => (
+                    <SelectItem key={slot} value={slot}>
+                      {slot}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -651,7 +733,7 @@ export default function ManageTeachersPage() {
               </Button>
               <Button
                 onClick={handleEditClass}
-                disabled={!editClassName}
+                disabled={!editTimeSlot}
                 className="bg-primary hover:bg-primary/90"
                 data-ocid="manage_teachers.edit_class_confirm_button"
               >
@@ -675,7 +757,7 @@ export default function ManageTeachersPage() {
         >
           <DialogHeader>
             <DialogTitle className="text-destructive">
-              Remove Teacher
+              Remove Ustaad
             </DialogTitle>
           </DialogHeader>
           <div className="py-2">

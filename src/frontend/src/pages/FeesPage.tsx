@@ -20,7 +20,10 @@ import {
   getStudents,
   saveFees,
 } from "@/lib/storage";
+import type { AppPage } from "@/types/dashboard";
 import {
+  AlertTriangle,
+  ArrowLeft,
   Bell,
   CheckCircle2,
   IndianRupee,
@@ -35,10 +38,46 @@ import { useEffect, useMemo, useState } from "react";
 
 interface FeesPageProps {
   session: Session;
+  setActivePage?: (page: AppPage) => void;
 }
 
 const STATUS_FILTERS = ["All", "paid", "pending"] as const;
 type FilterOption = (typeof STATUS_FILTERS)[number];
+
+/** Returns true if a pending fee was created/month implies more than 10 days ago */
+function isReminderDue(fee: FeeRecord): boolean {
+  if (fee.status !== "pending") return false;
+  // Parse month like "April 2026" → assume it's been pending if month is in the past
+  const now = new Date();
+  const monthMap: Record<string, number> = {
+    January: 0,
+    February: 1,
+    March: 2,
+    April: 3,
+    May: 4,
+    June: 5,
+    July: 6,
+    August: 7,
+    September: 8,
+    October: 9,
+    November: 10,
+    December: 11,
+  };
+  const parts = fee.month.split(" ");
+  if (parts.length !== 2) return false;
+  const monthIdx = monthMap[parts[0]];
+  const year = Number.parseInt(parts[1], 10);
+  if (monthIdx === undefined || Number.isNaN(year)) return false;
+  // Fee is from this month — check if >10 days into the month
+  const feeMonthDate = new Date(year, monthIdx, 1);
+  const diffDays =
+    (now.getTime() - feeMonthDate.getTime()) / (1000 * 60 * 60 * 24);
+  return diffDays > 10;
+}
+
+function buildAutoReminderMessage(studentName: string): string {
+  return `Assalamualaikum, ${studentName} ki fees 10+ din se pending hain. Jald ada karein. - Maktab Zaid Bin Sabit`;
+}
 
 function fmt(n: number) {
   return `₹${n.toLocaleString("en-IN")}`;
@@ -535,7 +574,11 @@ function AddFeeModal({ students, onClose, onSave }: AddFeeModalProps) {
                 <SelectContent>
                   {students.map((s) => (
                     <SelectItem key={s.id} value={s.id}>
-                      {s.name} — {s.className}
+                      {s.name} —{" "}
+                      {s.timeSlot
+                        ? s.timeSlot.charAt(0).toUpperCase() +
+                          s.timeSlot.slice(1)
+                        : s.className}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -614,7 +657,7 @@ function AddFeeModal({ students, onClose, onSave }: AddFeeModalProps) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function FeesPage({ session }: FeesPageProps) {
+export default function FeesPage({ session, setActivePage }: FeesPageProps) {
   const allStudents = getStudents();
   const [records, setRecords] = useState<FeeRecord[]>(() => getFees());
   const [filter, setFilter] = useState<FilterOption>("All");
@@ -638,13 +681,17 @@ export default function FeesPage({ session }: FeesPageProps) {
     if (session.role === "admin") return records;
 
     if (session.role === "teacher") {
-      // Filter by teacher's assigned class (teacherClass takes priority, falls back to name)
+      // Filter by teacher's assigned session (timeSlot takes priority)
+      const teacherSlot = session.teacherTimeSlot ?? "";
       const myStudentIds = allStudents
-        .filter((s) =>
-          session.teacherClass
-            ? s.className === session.teacherClass
-            : s.teacherName === session.name,
-        )
+        .filter((s) => {
+          if (teacherSlot) {
+            return (
+              (s.timeSlot ?? "").toLowerCase() === teacherSlot.toLowerCase()
+            );
+          }
+          return s.teacherName === session.name;
+        })
         .map((s) => s.id);
       return records.filter((r) => myStudentIds.includes(r.studentId));
     }
@@ -763,6 +810,18 @@ export default function FeesPage({ session }: FeesPageProps) {
 
   return (
     <div className="space-y-5 page-enter" data-ocid="fees.page">
+      {/* Back button */}
+      {setActivePage && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setActivePage("dashboard")}
+          className="gap-1.5 text-muted-foreground hover:text-foreground"
+          data-ocid="fees.back_button"
+        >
+          <ArrowLeft className="w-4 h-4" /> Back
+        </Button>
+      )}
       {/* Page header */}
       <div className="flex items-center justify-between gap-3">
         <div>
@@ -771,7 +830,7 @@ export default function FeesPage({ session }: FeesPageProps) {
             {session.role === "parent"
               ? "Your child's fee records"
               : session.role === "teacher"
-                ? `${session.name}'s class — ${visibleRecords.length} records`
+                ? `${session.name}'s session — ${visibleRecords.length} records`
                 : `All students — ${visibleRecords.length} records`}
           </p>
         </div>
@@ -952,22 +1011,34 @@ export default function FeesPage({ session }: FeesPageProps) {
                   </td>
                   <td className="px-4 py-3.5 text-center">
                     {/* Admin/teacher: clickable badge to toggle status */}
-                    {!isReadOnly ? (
-                      <button
-                        type="button"
-                        onClick={() => toggleStatus(rec.id)}
-                        title="Click to toggle status"
-                        data-ocid={`fees.toggle_status.${i + 1}`}
-                        className="cursor-pointer hover:opacity-80 transition-opacity"
-                      >
+                    <div className="flex flex-col items-center gap-1">
+                      {!isReadOnly ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleStatus(rec.id)}
+                          title="Click to toggle status"
+                          data-ocid={`fees.toggle_status.${i + 1}`}
+                          className="cursor-pointer hover:opacity-80 transition-opacity"
+                        >
+                          <FeeBadge status={rec.status} />
+                        </button>
+                      ) : (
                         <FeeBadge status={rec.status} />
-                      </button>
-                    ) : (
-                      <FeeBadge status={rec.status} />
-                    )}
+                      )}
+                      {/* Reminder Due indicator */}
+                      {rec.status === "pending" && isReminderDue(rec) && (
+                        <span
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-destructive/10 text-destructive border border-destructive/20"
+                          data-ocid={`fees.reminder_due.${i + 1}`}
+                        >
+                          <AlertTriangle className="w-2.5 h-2.5" />
+                          Reminder Due
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3.5 text-center">
-                    <div className="flex items-center justify-center gap-1.5">
+                    <div className="flex items-center justify-center gap-1.5 flex-wrap">
                       {/* Reminder button — admin/teacher, pending only */}
                       {!isReadOnly && rec.status === "pending" && (
                         <button
@@ -981,6 +1052,22 @@ export default function FeesPage({ session }: FeesPageProps) {
                           <span className="hidden sm:inline">Remind</span>
                         </button>
                       )}
+                      {/* Auto Reminder button — admin/teacher, pending >10 days */}
+                      {!isReadOnly &&
+                        rec.status === "pending" &&
+                        isReminderDue(rec) && (
+                          <a
+                            href={`https://wa.me/91${getParentMobile(rec)}?text=${encodeURIComponent(buildAutoReminderMessage(rec.studentName))}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            data-ocid={`fees.auto_reminder_button.${i + 1}`}
+                            className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-destructive/10 text-destructive hover:bg-destructive hover:text-white active:scale-95 transition-all duration-200 border border-destructive/20 flex items-center gap-1"
+                            title="Send 10+ days overdue reminder"
+                          >
+                            <AlertTriangle className="w-3 h-3" />
+                            <span className="hidden sm:inline">Auto</span>
+                          </a>
+                        )}
                       {/* UPI Pay button — parent, pending only */}
                       {isReadOnly && rec.status === "pending" && (
                         <button

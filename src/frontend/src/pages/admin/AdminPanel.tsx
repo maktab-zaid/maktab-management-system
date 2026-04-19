@@ -1,5 +1,6 @@
 import LogoBadge from "@/components/LogoBadge";
 import { Button } from "@/components/ui/button";
+import { initDefaultSettings } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import {
   BookOpen,
@@ -10,25 +11,35 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Settings,
+  User,
   Users,
   X,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { AdminPage } from "../../types";
 import AcademicPage from "./pages/AcademicPage";
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminProfilePage from "./pages/AdminProfilePage";
+import AdminSettingsPage from "./pages/AdminSettingsPage";
 import AttendancePage from "./pages/AttendancePage";
 import ReportsPage from "./pages/ReportsPage";
 import StudentsPage from "./pages/StudentsPage";
 import TeachersPage from "./pages/TeachersPage";
+
+type ExtendedAdminPage = AdminPage | "profile" | "settings";
 
 interface Props {
   onLogout: () => void;
   mobileNumber: string;
 }
 
-const navItems: { id: AdminPage; label: string; icon: React.ReactNode }[] = [
+const navItems: {
+  id: ExtendedAdminPage;
+  label: string;
+  icon: React.ReactNode;
+}[] = [
   {
     id: "dashboard",
     label: "Dashboard",
@@ -47,18 +58,28 @@ const navItems: { id: AdminPage; label: string; icon: React.ReactNode }[] = [
   },
   { id: "academic", label: "Academic", icon: <BookOpen className="w-4 h-4" /> },
   { id: "reports", label: "Reports", icon: <FileText className="w-4 h-4" /> },
+  { id: "profile", label: "Profile", icon: <User className="w-4 h-4" /> },
+  { id: "settings", label: "Settings", icon: <Settings className="w-4 h-4" /> },
 ];
 
 export default function AdminPanel({ onLogout, mobileNumber }: Props) {
-  const [activePage, setActivePage] = useState<AdminPage>("dashboard");
+  const [activePage, setActivePage] = useState<ExtendedAdminPage>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  useEffect(() => {
+    initDefaultSettings();
+  }, []);
+
   const currentNav = navItems.find((n) => n.id === activePage);
+
+  const handleNavigate = (page: string) => {
+    setActivePage(page as ExtendedAdminPage);
+  };
 
   const renderPage = () => {
     switch (activePage) {
       case "dashboard":
-        return <AdminDashboard />;
+        return <AdminDashboard onNavigate={handleNavigate} />;
       case "students":
         return <StudentsPage />;
       case "teachers":
@@ -69,8 +90,12 @@ export default function AdminPanel({ onLogout, mobileNumber }: Props) {
         return <AcademicPage />;
       case "reports":
         return <ReportsPage />;
+      case "profile":
+        return <AdminProfilePage />;
+      case "settings":
+        return <AdminSettingsPage />;
       default:
-        return <AdminDashboard />;
+        return <AdminDashboard onNavigate={handleNavigate} />;
     }
   };
 
@@ -120,7 +145,10 @@ export default function AdminPanel({ onLogout, mobileNumber }: Props) {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 px-3 py-2 space-y-1" data-ocid="admin.panel">
+        <nav
+          className="flex-1 px-3 py-2 space-y-1 overflow-y-auto"
+          data-ocid="admin.panel"
+        >
           {navItems.map((item) => (
             <button
               key={item.id}
