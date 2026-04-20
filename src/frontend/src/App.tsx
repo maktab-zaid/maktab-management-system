@@ -1,4 +1,5 @@
 import { Toaster } from "@/components/ui/sonner";
+import React from "react";
 import { useEffect, useState } from "react";
 import { MainLayout } from "./components/Layout/MainLayout";
 import {
@@ -30,7 +31,100 @@ import AboutUsAdminPage from "./pages/admin/pages/AboutUsAdminPage";
 import LoginPage from "./pages/auth/LoginPage";
 import type { AppPage } from "./types/dashboard";
 
+// ─── Error Boundary ────────────────────────────────────────────────────────────
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error?: Error;
+}
+
+class AppErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  ErrorBoundaryState
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("[AppErrorBoundary] Uncaught error:", error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div
+          style={{
+            minHeight: "100vh",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexDirection: "column",
+            gap: "16px",
+            padding: "24px",
+            textAlign: "center",
+            background: "#f8f9fa",
+          }}
+        >
+          <div
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: "50%",
+              background: "#1a5c38",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 28,
+            }}
+          >
+            🕌
+          </div>
+          <h1 style={{ fontSize: 20, fontWeight: 700, color: "#1a1a1a" }}>
+            Maktab Zaid Bin Sabit
+          </h1>
+          <p style={{ color: "#555", maxWidth: 340 }}>
+            Something went wrong. Please refresh the page to continue.
+          </p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            style={{
+              background: "#1a5c38",
+              color: "#fff",
+              border: "none",
+              borderRadius: 8,
+              padding: "10px 24px",
+              fontWeight: 600,
+              cursor: "pointer",
+              fontSize: 14,
+            }}
+          >
+            Refresh Page
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ─── App ───────────────────────────────────────────────────────────────────────
+
 export default function App() {
+  return (
+    <AppErrorBoundary>
+      <AppInner />
+    </AppErrorBoundary>
+  );
+}
+
+function AppInner() {
   const [session, setSession] = useState<Session | null>(() => getSession());
   const [activePage, setActivePage] = useState<AppPage>("dashboard");
 

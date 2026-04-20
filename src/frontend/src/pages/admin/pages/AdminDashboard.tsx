@@ -3,7 +3,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getStudents, getTeachers } from "@/lib/storage";
+import {
+  type Student,
+  type Teacher,
+  getStudents,
+  getTeachers,
+} from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -19,7 +24,7 @@ import {
   Users,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   useAdminSheetStats,
   useStudentsSheet,
@@ -28,8 +33,17 @@ import {
 // ── Shift Overview Component ─────────────────────────────────────────────────
 
 function ShiftOverview() {
-  const localStudents = getStudents();
-  const localTeachers = getTeachers();
+  const [localStudents, setLocalStudents] = useState<Student[]>([]);
+  const [localTeachers, setLocalTeachers] = useState<Teacher[]>([]);
+
+  useEffect(() => {
+    getStudents()
+      .then(setLocalStudents)
+      .catch(() => setLocalStudents([]));
+    getTeachers()
+      .then(setLocalTeachers)
+      .catch(() => setLocalTeachers([]));
+  }, []);
 
   const shifts = [
     {
@@ -233,8 +247,17 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const { data: students = [] } = useStudentsSheet();
   const queryClient = useQueryClient();
   const [timeSlotFilter, setTimeSlotFilter] = useState<TimeSlotFilter>("all");
+  const [localStudents, setLocalStudents] = useState<Student[]>([]);
+  const [localTeachers, setLocalTeachers] = useState<Teacher[]>([]);
 
-  const localStudents = getStudents();
+  useEffect(() => {
+    getStudents()
+      .then(setLocalStudents)
+      .catch(() => setLocalStudents([]));
+    getTeachers()
+      .then(setLocalTeachers)
+      .catch(() => setLocalTeachers([]));
+  }, []);
 
   // Time slot breakdown counts
   const morningCount = localStudents.filter(
@@ -557,7 +580,6 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                   const count = students.filter(
                     (s) => s.teacher.toLowerCase() === name.toLowerCase(),
                   ).length;
-                  const localTeachers = getTeachers();
                   const lt = localTeachers.find(
                     (t) => t.name.toLowerCase() === name.toLowerCase(),
                   );

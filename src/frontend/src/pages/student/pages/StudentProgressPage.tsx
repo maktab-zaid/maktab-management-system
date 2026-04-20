@@ -1,8 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { SabakRecord, Student } from "@/lib/storage";
 import { getStudentSabakLatest, getStudents } from "@/lib/storage";
 import { BookOpen, Download } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useStudentByMobile } from "../../../hooks/useGoogleSheets";
 
 interface Props {
@@ -41,13 +43,26 @@ function formatSectionValue(
 
 export default function StudentProgressPage({ mobileNumber }: Props) {
   const { isLoading } = useStudentByMobile(mobileNumber);
-
-  const localStudent = getStudents().find(
-    (s) => s.parentMobile === mobileNumber,
+  const [localStudent, setLocalStudent] = useState<Student | undefined>(
+    undefined,
   );
-  const sabakLatest = localStudent
-    ? getStudentSabakLatest(localStudent.id)
-    : {};
+  const [sabakLatest, setSabakLatest] = useState<
+    Partial<Record<string, SabakRecord>>
+  >({});
+
+  useEffect(() => {
+    getStudents()
+      .then((students) => {
+        const found = students.find((s) => s.parentMobile === mobileNumber);
+        setLocalStudent(found);
+        if (found) {
+          getStudentSabakLatest(found.id)
+            .then(setSabakLatest)
+            .catch(() => {});
+        }
+      })
+      .catch(() => {});
+  }, [mobileNumber]);
 
   const handleDownloadPDF = async () => {
     const { default: jsPDF } = await import("jspdf");

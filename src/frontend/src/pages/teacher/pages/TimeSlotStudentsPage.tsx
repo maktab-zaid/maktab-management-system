@@ -65,30 +65,36 @@ export default function TimeSlotStudentsPage({
   const [removeTarget, setRemoveTarget] = useState<Student | null>(null);
 
   useEffect(() => {
-    const all = getStudents();
-    setStudents(all.filter((s) => s.timeSlot === timeSlot));
+    getStudents()
+      .then((all) => {
+        setStudents(all.filter((s) => s.timeSlot === timeSlot));
+      })
+      .catch(() => {});
   }, [timeSlot]);
 
   const confirmRemove = () => {
     if (!removeTarget) return;
-    const all = getStudents().filter((s) => s.id !== removeTarget.id);
-    saveStudents(all);
-
-    // Log the action
-    addActivityLogEntry({
-      actorName: ustaadName,
-      actorRole: "ustaad",
-      action: "removed_student",
-      targetStudentName: removeTarget.name,
-      details: `from ${SLOT_META[timeSlot].label} shift`,
-    });
-
-    toast.success(
-      `${removeTarget.name} removed from ${SLOT_META[timeSlot].label} shift`,
-    );
-    setRemoveTarget(null);
-    // Refresh list
-    setStudents(all.filter((s) => s.timeSlot === timeSlot));
+    const targetName = removeTarget.name;
+    getStudents()
+      .then((all) => {
+        const updated = all.filter((s) => s.id !== removeTarget.id);
+        return saveStudents(updated).then(() => {
+          // Log the action
+          addActivityLogEntry({
+            actorName: ustaadName,
+            actorRole: "ustaad",
+            action: "removed_student",
+            targetStudentName: targetName,
+            details: `from ${SLOT_META[timeSlot].label} shift`,
+          });
+          toast.success(
+            `${targetName} removed from ${SLOT_META[timeSlot].label} shift`,
+          );
+          setRemoveTarget(null);
+          setStudents(updated.filter((s) => s.timeSlot === timeSlot));
+        });
+      })
+      .catch(() => toast.error("Failed to remove student"));
   };
 
   const meta = SLOT_META[timeSlot];

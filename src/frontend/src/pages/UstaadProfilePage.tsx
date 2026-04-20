@@ -11,7 +11,7 @@ import {
 } from "@/lib/storage";
 import type { AppPage } from "@/types/dashboard";
 import { ArrowLeft, Camera, Clock, Moon, Save, Sun, User } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 interface UstaadProfilePageProps {
@@ -35,23 +35,40 @@ export default function UstaadProfilePage({
   session,
   setActivePage,
 }: UstaadProfilePageProps) {
-  const existing = getUstaadProfile(session.name);
+  const [existingProfile, setExistingProfile] = useState<UstaadProfile | null>(
+    null,
+  );
 
   const [profile, setProfile] = useState<
     Omit<UstaadProfile, "id" | "createdAt">
-  >(() => ({
-    name: existing?.name ?? session.name ?? "",
-    phone: existing?.phone ?? session.mobile ?? "",
-    email: existing?.email ?? "",
-    bio: existing?.bio ?? "",
-    timeSlot:
-      existing?.timeSlot ??
-      session.teacherTimeSlot ??
-      session.teacherSessions?.[0] ??
-      "",
-    address: existing?.address ?? "",
-    profileImage: existing?.profileImage ?? "",
-  }));
+  >({
+    name: session.name ?? "",
+    phone: session.mobile ?? "",
+    email: "",
+    bio: "",
+    timeSlot: session.teacherTimeSlot ?? session.teacherSessions?.[0] ?? "",
+    address: "",
+    profileImage: "",
+  });
+
+  useEffect(() => {
+    getUstaadProfile(session.name)
+      .then((existing) => {
+        if (existing) {
+          setExistingProfile(existing);
+          setProfile({
+            name: existing.name,
+            phone: existing.phone,
+            email: existing.email,
+            bio: existing.bio,
+            timeSlot: existing.timeSlot,
+            address: existing.address ?? "",
+            profileImage: existing.profileImage ?? "",
+          });
+        }
+      })
+      .catch(() => {});
+  }, [session.name]);
 
   const [saved, setSaved] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -80,15 +97,16 @@ export default function UstaadProfilePage({
     reader.readAsDataURL(file);
   }
 
-  function handleSave(e: React.FormEvent) {
+  async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     const toSave: UstaadProfile = {
       id:
-        existing?.id ?? `up-${session.name.replace(/\s+/g, "-").toLowerCase()}`,
+        existingProfile?.id ??
+        `up-${session.name.replace(/\s+/g, "-").toLowerCase()}`,
       ...profile,
-      createdAt: existing?.createdAt ?? new Date().toISOString(),
+      createdAt: existingProfile?.createdAt ?? new Date().toISOString(),
     };
-    saveUstaadProfile(toSave);
+    await saveUstaadProfile(toSave);
     setSaved(true);
     toast.success("Profile saved successfully!");
   }

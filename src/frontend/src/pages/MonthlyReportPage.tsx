@@ -1,6 +1,11 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
+  type AttendanceRecord,
+  type FeeRecord,
+  type SabakRecord,
+  type Student,
+  type Teacher,
   getAttendance,
   getFees,
   getSabak,
@@ -9,7 +14,7 @@ import {
 } from "@/lib/storage";
 import type { AppPage } from "@/types/dashboard";
 import { ArrowLeft, Download, FileText } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 interface MonthlyReportPageProps {
   setActivePage: (page: AppPage) => void;
@@ -46,11 +51,29 @@ function getSessionLabel(slot?: string): string {
 export default function MonthlyReportPage({
   setActivePage,
 }: MonthlyReportPageProps) {
-  const teachers = getTeachers();
-  const allStudents = getStudents();
-  const allAttendance = getAttendance();
-  const allFees = getFees();
-  const allSabak = getSabak();
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [allStudents, setAllStudents] = useState<Student[]>([]);
+  const [allAttendance, setAllAttendance] = useState<AttendanceRecord[]>([]);
+  const [allFees, setAllFees] = useState<FeeRecord[]>([]);
+  const [allSabak, setAllSabak] = useState<SabakRecord[]>([]);
+
+  useEffect(() => {
+    getTeachers()
+      .then(setTeachers)
+      .catch(() => setTeachers([]));
+    getStudents()
+      .then(setAllStudents)
+      .catch(() => setAllStudents([]));
+    getAttendance()
+      .then(setAllAttendance)
+      .catch(() => setAllAttendance([]));
+    getFees()
+      .then(setAllFees)
+      .catch(() => setAllFees([]));
+    getSabak()
+      .then(setAllSabak)
+      .catch(() => setAllSabak([]));
+  }, []);
 
   const currentMonth = new Date().toISOString().slice(5, 7);
   const currentYear = String(new Date().getFullYear());

@@ -25,7 +25,7 @@ import {
   Clock,
   History,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 interface Props {
@@ -234,22 +234,40 @@ function SectionCard({
   const [saving, setSaving] = useState(false);
   const [history, setHistory] = useState<SabakRecord[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [latest, setLatest] = useState<SabakRecord | undefined>(undefined);
+  const [quranForm, setQuranForm] = useState<QuranForm>({
+    surahName: "",
+    ayatNumber: "",
+    remarks: "",
+  });
+  const [countForm, setCountForm] = useState<CountForm>({
+    countCompleted: "",
+    remarks: "",
+  });
 
-  const latest = getSabakRecords().find(
-    (r) => r.studentId === studentId && r.section === section.id,
-  );
-
-  const [quranForm, setQuranForm] = useState<QuranForm>(() => ({
-    surahName: latest?.surahName ?? "",
-    ayatNumber: latest?.ayatNumber != null ? String(latest.ayatNumber) : "",
-    remarks: latest?.remarks ?? "",
-  }));
-
-  const [countForm, setCountForm] = useState<CountForm>(() => ({
-    countCompleted:
-      latest?.countCompleted != null ? String(latest.countCompleted) : "",
-    remarks: latest?.remarks ?? "",
-  }));
+  useEffect(() => {
+    getSabakRecords()
+      .then((all) => {
+        const found = all.find(
+          (r) => r.studentId === studentId && r.section === section.id,
+        );
+        setLatest(found);
+        if (found) {
+          setQuranForm({
+            surahName: found.surahName ?? "",
+            ayatNumber:
+              found.ayatNumber != null ? String(found.ayatNumber) : "",
+            remarks: found.remarks ?? "",
+          });
+          setCountForm({
+            countCompleted:
+              found.countCompleted != null ? String(found.countCompleted) : "",
+            remarks: found.remarks ?? "",
+          });
+        }
+      })
+      .catch(() => {});
+  }, [studentId, section.id]);
 
   const isQuran = section.id === "quran";
 
@@ -300,9 +318,12 @@ function SectionCard({
   };
 
   const loadHistory = () => {
-    const h = getSabakHistory(studentId, section.id);
-    setHistory(h);
-    setShowHistory(true);
+    getSabakHistory(studentId, section.id)
+      .then((h) => {
+        setHistory(h);
+        setShowHistory(true);
+      })
+      .catch(() => {});
   };
 
   const latestSummary = latest ? formatSummary(latest) : null;
@@ -538,8 +559,16 @@ function SectionCard({
 }
 
 export default function UpdateSabakPage({ teacherId, onBack }: Props) {
-  const allStudents = getStudents();
+  const [allStudents, setAllStudents] = useState<
+    import("@/lib/storage").Student[]
+  >([]);
   const [selectedId, setSelectedId] = useState("");
+
+  useEffect(() => {
+    getStudents()
+      .then(setAllStudents)
+      .catch(() => {});
+  }, []);
 
   const selectedStudent = allStudents.find((s) => s.id === selectedId);
   const teacherName = teacherId.replace("teacher-mobile-", "");

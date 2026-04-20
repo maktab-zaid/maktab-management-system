@@ -32,7 +32,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 interface AttendancePageProps {
@@ -201,12 +201,21 @@ function SendAllModal({ alerts, onClose }: SendAllModalProps) {
 // ─── Parent Read-Only View ────────────────────────────────────────────────────
 
 function ParentAttendanceView({ session }: { session: Session }) {
-  const myStudents = useMemo(
-    () => getStudents().filter((s) => s.parentMobile === session.mobile),
-    [session.mobile],
-  );
+  const [myStudents, setMyStudents] = useState<Student[]>([]);
+  const [allAttendance, setAllAttendance] = useState<AttendanceRecord[]>([]);
 
-  const allAttendance = useMemo(() => getAttendance(), []);
+  useEffect(() => {
+    getStudents()
+      .then((students) =>
+        setMyStudents(
+          students.filter((s) => s.parentMobile === session.mobile),
+        ),
+      )
+      .catch(() => setMyStudents([]));
+    getAttendance()
+      .then(setAllAttendance)
+      .catch(() => setAllAttendance([]));
+  }, [session.mobile]);
 
   if (myStudents.length === 0) {
     return (
@@ -389,11 +398,9 @@ export default function AttendancePage({
 function AttendanceEditView({ session }: { session: Session }) {
   const today = formatDate(new Date());
 
-  // Derive available sessions from students in storage
   const SESSION_LIST_ATT = ["Morning", "Afternoon", "Evening"] as const;
   const allClasses = SESSION_LIST_ATT as unknown as readonly string[];
 
-  // For teacher: session is fixed. For admin: dropdown
   const isTeacher = session.role === "teacher";
   const teacherSessionSlot = session.teacherTimeSlot
     ? session.teacherTimeSlot.charAt(0).toUpperCase() +
@@ -407,29 +414,39 @@ function AttendanceEditView({ session }: { session: Session }) {
   );
   const [attendance, setAttendance] = useState<
     Record<string, AttendanceStatus>
-  >(() => {
-    const existing = getAttendance();
-    const init: Record<string, AttendanceStatus> = {};
-    const students = getStudents();
-    for (const s of students) {
-      const rec = existing.find(
-        (r) => r.studentId === s.id && r.date === today,
-      );
-      init[s.id] = rec
-        ? rec.status === "present"
-          ? "Present"
-          : "Absent"
-        : "Present";
-    }
-    return init;
-  });
+  >({});
+  const [allStudents, setAllStudents] = useState<Student[]>([]);
+  const [allAttendanceRecords, setAllAttendanceRecords] = useState<
+    AttendanceRecord[]
+  >([]);
   const [submitted, setSubmitted] = useState(false);
-  // savedDate tracks which date's attendance was last saved (for bell persistence)
   const [savedDate, setSavedDate] = useState<string | null>(null);
   const [showSendAllModal, setShowSendAllModal] = useState(false);
 
-  // Re-load students list whenever session or date changes
-  const allStudents = useMemo(() => getStudents(), []);
+  // Load students and attendance from Supabase on mount
+  useEffect(() => {
+    const todayStr = formatDate(new Date());
+    getStudents().then((students) => {
+      setAllStudents(students);
+      getAttendance().then((existing) => {
+        setAllAttendanceRecords(existing);
+        const init: Record<string, AttendanceStatus> = {};
+        for (const s of students) {
+          const rec = existing.find(
+            (r) => r.studentId === s.id && r.date === todayStr,
+          );
+          init[s.id] = rec
+            ? rec.status === "present"
+              ? "Present"
+              : "Absent"
+            : "Present";
+        }
+        setAttendance(init);
+      });
+    });
+  }, []);
+
+  // Re-filter students based on selected class
   const filtered = useMemo(
     () =>
       selectedClass
@@ -441,13 +458,16 @@ function AttendanceEditView({ session }: { session: Session }) {
     [allStudents, selectedClass],
   );
 
-  // Pre-fill attendance from storage when session/date changes
-  const syncAttendanceFromStorage = (students: Student[], date: string) => {
-    const existing = getAttendance();
+  // Pre-fill attendance when session/date changes (uses in-memory state)
+  const syncAttendanceFromRecords = (
+    students: Student[],
+    date: string,
+    records: AttendanceRecord[],
+  ) => {
     setAttendance((prev) => {
       const updated = { ...prev };
       for (const s of students) {
-        const rec = existing.find(
+        const rec = records.find(
           (r) => r.studentId === s.id && r.date === date,
         );
         if (rec) {
@@ -465,13 +485,13 @@ function AttendanceEditView({ session }: { session: Session }) {
     const students = allStudents.filter(
       (s) => (s.timeSlot ?? "").toLowerCase() === cls.toLowerCase(),
     );
-    syncAttendanceFromStorage(students, selectedDate);
+    syncAttendanceFromRecords(students, selectedDate, allAttendanceRecords);
     setSubmitted(false);
   };
 
   const handleDateChange = (date: string) => {
     setSelectedDate(date);
-    syncAttendanceFromStorage(filtered, date);
+    syncAttendanceFromRecords(filtered, date, allAttendanceRecords);
     setSubmitted(false);
   };
 
@@ -488,9 +508,9 @@ function AttendanceEditView({ session }: { session: Session }) {
     });
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const studentIds = new Set(filtered.map((s) => s.id));
-    const existing = getAttendance().filter(
+    const existing = allAttendanceRecords.filter(
       (r) => !studentIds.has(r.studentId) || r.date !== selectedDate,
     );
 
@@ -503,7 +523,9 @@ function AttendanceEditView({ session }: { session: Session }) {
       markedBy: session.name,
     }));
 
-    saveAttendance([...existing, ...newRecords]);
+    const merged = [...existing, ...newRecords];
+    await saveAttendance(merged);
+    setAllAttendanceRecords(merged);
     setSubmitted(true);
     setSavedDate(selectedDate);
 
@@ -547,7 +569,7 @@ function AttendanceEditView({ session }: { session: Session }) {
     message: buildAbsenceMessage(s.name),
   }));
 
-  // History: read from storage for selected class
+  // History: computed from in-memory allAttendanceRecords
   type DayStats = {
     date: string;
     present: number;
@@ -555,10 +577,9 @@ function AttendanceEditView({ session }: { session: Session }) {
     total: number;
   };
   const historyRows = useMemo<DayStats[]>(() => {
-    const records = getAttendance();
     const classStudentIds = new Set(filtered.map((s) => s.id));
     const map: Record<string, DayStats> = {};
-    for (const rec of records) {
+    for (const rec of allAttendanceRecords) {
       if (!classStudentIds.has(rec.studentId)) continue;
       if (!map[rec.date]) {
         map[rec.date] = { date: rec.date, present: 0, absent: 0, total: 0 };
@@ -570,7 +591,7 @@ function AttendanceEditView({ session }: { session: Session }) {
     return Object.values(map)
       .sort((a, b) => b.date.localeCompare(a.date))
       .slice(0, 7);
-  }, [filtered]);
+  }, [filtered, allAttendanceRecords]);
 
   return (
     <>

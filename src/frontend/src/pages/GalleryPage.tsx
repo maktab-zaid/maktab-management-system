@@ -24,7 +24,7 @@ import {
 } from "@/lib/storage";
 import { CLASS_LIST } from "@/types/index";
 import { Image, Plus, Trash2, Video, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 interface GalleryPageProps {
@@ -40,15 +40,24 @@ interface AddForm {
 const EMPTY_FORM: AddForm = { title: "", url: "", type: "image" };
 
 export default function GalleryPage({ session }: GalleryPageProps) {
-  const [items, setItems] = useState<GalleryItem[]>(() =>
-    getGallery().sort(
-      (a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime(),
-    ),
-  );
+  const [items, setItems] = useState<GalleryItem[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<GalleryItem | null>(null);
   const [form, setForm] = useState<AddForm>(EMPTY_FORM);
   const [classFilter, setClassFilter] = useState<string>("all");
+
+  useEffect(() => {
+    getGallery()
+      .then((data) =>
+        setItems(
+          data.sort(
+            (a, b) =>
+              new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime(),
+          ),
+        ),
+      )
+      .catch(() => setItems([]));
+  }, []);
 
   const isAdmin = session.role === "admin";
   const isTeacher = session.role === "teacher";
@@ -70,7 +79,7 @@ export default function GalleryPage({ session }: GalleryPageProps) {
       ? items
       : items.filter((item) => item.classTag === classFilter);
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!form.title.trim()) return;
     const newItem: GalleryItem = {
       id: createId(),
@@ -83,16 +92,16 @@ export default function GalleryPage({ session }: GalleryPageProps) {
     };
     const updated = [newItem, ...items];
     setItems(updated);
-    saveGallery(updated);
+    await saveGallery(updated);
     setForm(EMPTY_FORM);
     setShowAdd(false);
     toast.success("Item added to gallery");
   };
 
-  const handleDelete = (item: GalleryItem) => {
+  const handleDelete = async (item: GalleryItem) => {
     const updated = items.filter((i) => i.id !== item.id);
     setItems(updated);
-    saveGallery(updated);
+    await saveGallery(updated);
     setDeleteTarget(null);
     toast.success("Item removed from gallery");
   };

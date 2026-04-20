@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  type Teacher,
   type UstaadAttendance,
   addUstaadAttendanceRecord,
   createId,
@@ -12,7 +13,7 @@ import {
 } from "@/lib/storage";
 import type { AppPage } from "@/types/dashboard";
 import { ArrowLeft, CalendarCheck, UserCheck } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 interface UstaadAttendancePageProps {
@@ -22,10 +23,17 @@ interface UstaadAttendancePageProps {
 export default function UstaadAttendancePage({
   setActivePage,
 }: UstaadAttendancePageProps) {
-  const teachers = getTeachers();
-  const [records, setRecords] = useState<UstaadAttendance[]>(() =>
-    loadUstaadAttendance().sort((a, b) => b.date.localeCompare(a.date)),
-  );
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [records, setRecords] = useState<UstaadAttendance[]>([]);
+
+  useEffect(() => {
+    getTeachers()
+      .then(setTeachers)
+      .catch(() => setTeachers([]));
+    loadUstaadAttendance()
+      .then((r) => setRecords(r.sort((a, b) => b.date.localeCompare(a.date))))
+      .catch(() => setRecords([]));
+  }, []);
 
   const today = new Date().toISOString().slice(0, 10);
   const [form, setForm] = useState({
@@ -35,7 +43,7 @@ export default function UstaadAttendancePage({
     notes: "",
   });
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.ustaadName) {
       toast.error("Please select an Ustaad");
@@ -50,10 +58,9 @@ export default function UstaadAttendancePage({
       status: form.status,
       notes: form.notes || undefined,
     };
-    addUstaadAttendanceRecord(record);
-    setRecords(
-      loadUstaadAttendance().sort((a, b) => b.date.localeCompare(a.date)),
-    );
+    await addUstaadAttendanceRecord(record);
+    const refreshed = await loadUstaadAttendance();
+    setRecords(refreshed.sort((a, b) => b.date.localeCompare(a.date)));
     toast.success(`Attendance marked for ${form.ustaadName}`);
     setForm({ ustaadName: "", date: today, status: "present", notes: "" });
   }

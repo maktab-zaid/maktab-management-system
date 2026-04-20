@@ -160,8 +160,14 @@ export default function TeacherPanel({ onLogout, mobileNumber }: Props) {
   const teacherTimeSlot = session?.teacherTimeSlot;
 
   useEffect(() => {
-    setUnreadCount(getUnreadCount());
-    const interval = setInterval(() => setUnreadCount(getUnreadCount()), 10000);
+    getUnreadCount()
+      .then(setUnreadCount)
+      .catch(() => setUnreadCount(0));
+    const interval = setInterval(() => {
+      getUnreadCount()
+        .then(setUnreadCount)
+        .catch(() => {});
+    }, 10000);
     return () => clearInterval(interval);
   }, []);
 

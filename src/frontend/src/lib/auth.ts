@@ -1,23 +1,23 @@
 // Authentication helpers for Madrasa Management System
 import {
   type Session,
-  addParentActivity,
+  type Student,
+  type Teacher,
   clearSession,
   getSession,
   getStudents,
   getTeachers,
   saveSession,
-  updateParentLastLogin,
 } from "./storage";
 
 /**
- * @deprecated Class-based system removed. Sessions are now used.
- * Kept as empty array so any existing import doesn't break.
+ * @deprecated Class-based system removed.
  */
 export const CLASS_LIST: readonly string[] = [] as const;
 
 /**
  * Admin login — username: "admin", password: "1234"
+ * Works even when Supabase is not configured.
  */
 export function loginAsAdmin(
   username: string,
@@ -33,18 +33,23 @@ export function loginAsAdmin(
 
 /**
  * Teacher (Ustaad) login — name-only authentication.
- *
- * Looks up the teacher by name in the Admin-managed teacher list (localStorage).
- * If no teachers exist or name is not found → login fails.
- * No mobile number required.
+ * Queries Supabase teachers table. Returns null if not found.
+ * Returns null (with no crash) if Supabase is unavailable.
  */
-export function loginAsTeacher(teacherName: string): Session | null {
+export async function loginAsTeacher(
+  teacherName: string,
+): Promise<Session | null> {
   const trimmedName = teacherName.trim();
   if (!trimmedName) return null;
 
-  const teachers = getTeachers();
+  let teachers: Teacher[] = [];
+  try {
+    teachers = await getTeachers();
+  } catch (e) {
+    console.error("[Auth] loginAsTeacher: failed to fetch teachers", e);
+    return null;
+  }
 
-  // If no teachers added by Admin yet, reject login
   if (teachers.length === 0) return null;
 
   const teacher = teachers.find(
@@ -52,7 +57,6 @@ export function loginAsTeacher(teacherName: string): Session | null {
   );
   if (!teacher) return null;
 
-  // Resolve all shifts for this teacher
   let allShifts: string[] = [];
   if (teacher.shifts && teacher.shifts.length > 0) {
     allShifts = teacher.shifts;
@@ -74,13 +78,21 @@ export function loginAsTeacher(teacherName: string): Session | null {
 
 /**
  * Parent login — checks if any student has the given parentMobile.
- * Records last login and activity on success.
+ * Queries Supabase students table.
+ * Returns null (with no crash) if Supabase is unavailable.
  */
-export function loginAsParent(mobile: string): Session | null {
+export async function loginAsParent(mobile: string): Promise<Session | null> {
   const trimmedMobile = mobile.trim();
   if (!trimmedMobile) return null;
 
-  const students = getStudents();
+  let students: Student[] = [];
+  try {
+    students = await getStudents();
+  } catch (e) {
+    console.error("[Auth] loginAsParent: failed to fetch students", e);
+    return null;
+  }
+
   const linked = students.find((s) => s.parentMobile === trimmedMobile);
   if (!linked) return null;
 
@@ -90,10 +102,6 @@ export function loginAsParent(mobile: string): Session | null {
     mobile: trimmedMobile,
   };
   saveSession(session);
-
-  updateParentLastLogin(trimmedMobile, linked.id, linked.name);
-  addParentActivity(trimmedMobile, "Login");
-
   return session;
 }
 

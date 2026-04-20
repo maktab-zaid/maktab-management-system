@@ -20,7 +20,7 @@ import {
 import type { AppPage } from "@/types/dashboard";
 import { ArrowLeft, BookOpen, Users } from "lucide-react";
 import { motion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 export interface SabakPageProps {
@@ -369,8 +369,17 @@ function UpdateSabakModal({
 // ── Main Page ────────────────────────────────────────────────────────────────
 
 export default function SabakPage({ session, setActivePage }: SabakPageProps) {
-  const allStudents = getStudents();
-  const allSabak = getSabak();
+  const [allStudents, setAllStudents] = useState<Student[]>([]);
+  const [allSabak, setAllSabak] = useState<SabakRecord[]>([]);
+
+  useEffect(() => {
+    getStudents()
+      .then(setAllStudents)
+      .catch(() => setAllStudents([]));
+    getSabak()
+      .then(setAllSabak)
+      .catch(() => setAllSabak([]));
+  }, []);
 
   // Teacher sees only students in their assigned time slot
   const visibleStudents: Student[] =
@@ -412,9 +421,7 @@ export default function SabakPage({ session, setActivePage }: SabakPageProps) {
     return recs.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
   }
 
-  const [records, setRecords] = useState<SabakRecord[]>(() =>
-    allSabak.filter((r) => visibleStudentIds.has(r.studentId)),
-  );
+  const [records, setRecords] = useState<SabakRecord[]>([]);
   const [filterStudent, setFilterStudent] = useState<string>("all");
   const [filterSession, setFilterSession] = useState<string>("all");
   const [modalOpen, setModalOpen] = useState(false);
@@ -481,7 +488,7 @@ export default function SabakPage({ session, setActivePage }: SabakPageProps) {
     };
   }
 
-  function handleSave(data: SabakFormData) {
+  async function handleSave(data: SabakFormData) {
     const student = visibleStudents.find((s) => s.id === data.studentId);
     if (!student) return;
 
@@ -509,15 +516,15 @@ export default function SabakPage({ session, setActivePage }: SabakPageProps) {
       hifz: data.hifz || undefined,
     };
 
-    const allStored = getSabak();
     let updatedAll: SabakRecord[];
     if (existing) {
-      updatedAll = allStored.map((r) => (r.id === existing.id ? newRecord : r));
+      updatedAll = allSabak.map((r) => (r.id === existing.id ? newRecord : r));
     } else {
-      updatedAll = [newRecord, ...allStored];
+      updatedAll = [newRecord, ...allSabak];
     }
-    saveSabak(updatedAll);
+    await saveSabak(updatedAll);
 
+    setAllSabak(updatedAll);
     setRecords(updatedAll.filter((r) => visibleStudentIds.has(r.studentId)));
     toast.success("Sabak record saved successfully");
     setEditTarget(null);

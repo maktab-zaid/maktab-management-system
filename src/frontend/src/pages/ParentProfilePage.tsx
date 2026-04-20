@@ -10,7 +10,7 @@ import {
 } from "@/lib/storage";
 import type { AppPage } from "@/types/dashboard";
 import { ArrowLeft, Camera, Save, User } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 interface ParentProfilePageProps {
@@ -23,20 +23,36 @@ export default function ParentProfilePage({
   setActivePage,
 }: ParentProfilePageProps) {
   const mobile = session.mobile ?? "";
-  const existing = getParentProfileByMobile(mobile);
-
-  // Find child linked to this parent
-  const allStudents = getStudents();
-  const child = allStudents.find((s) => s.parentMobile === mobile);
-
+  const [child, setChild] = useState<import("@/lib/storage").Student | null>(
+    null,
+  );
   const [profile, setProfile] = useState({
-    name: existing?.name ?? session.name ?? "",
-    address: existing?.address ?? "",
-    profileImage: existing?.profileImage ?? "",
+    name: session.name ?? "",
+    address: "",
+    profileImage: "",
   });
-
   const [saved, setSaved] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    getStudents()
+      .then((students) => {
+        const found = students.find((s) => s.parentMobile === mobile);
+        setChild(found ?? null);
+      })
+      .catch(() => {});
+    getParentProfileByMobile(mobile)
+      .then((existing) => {
+        if (existing) {
+          setProfile({
+            name: existing.name ?? session.name ?? "",
+            address: existing.address ?? "",
+            profileImage: existing.profileImage ?? "",
+          });
+        }
+      })
+      .catch(() => {});
+  }, [mobile, session.name]);
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const { name, value } = e.target;
@@ -55,9 +71,9 @@ export default function ParentProfilePage({
     reader.readAsDataURL(file);
   }
 
-  function handleSave(e: React.FormEvent) {
+  async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    saveParentProfileRecord({
+    await saveParentProfileRecord({
       mobile,
       name: profile.name,
       address: profile.address,

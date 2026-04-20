@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/select";
 import { getStudents } from "@/lib/storage";
 import { CreditCard, Download, Upload } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface Props {
   mobileNumber: string;
@@ -27,22 +27,39 @@ interface IdCardData {
 }
 
 export default function StudentIdCardPage({ mobileNumber }: Props) {
-  const localStudent = getStudents().find(
-    (s) => s.parentMobile === mobileNumber,
-  );
-
   const [formData, setFormData] = useState<IdCardData>({
-    studentName: localStudent?.name || "",
-    fatherName: localStudent?.fatherName || "",
-    mobileNumber: localStudent?.parentMobile || mobileNumber,
-    address: localStudent?.address || "",
-    session: localStudent?.timeSlot
-      ? localStudent.timeSlot.charAt(0).toUpperCase() +
-        localStudent.timeSlot.slice(1)
-      : "",
-    ustaadName: localStudent?.teacherName || "",
+    studentName: "",
+    fatherName: "",
+    mobileNumber,
+    address: "",
+    session: "",
+    ustaadName: "",
     photo: null,
   });
+
+  useEffect(() => {
+    getStudents()
+      .then((students) => {
+        const localStudent = students.find(
+          (s) => s.parentMobile === mobileNumber,
+        );
+        if (localStudent) {
+          setFormData((prev) => ({
+            ...prev,
+            studentName: localStudent.name || "",
+            fatherName: localStudent.fatherName || "",
+            mobileNumber: localStudent.parentMobile || mobileNumber,
+            address: localStudent.address || "",
+            session: localStudent.timeSlot
+              ? localStudent.timeSlot.charAt(0).toUpperCase() +
+                localStudent.timeSlot.slice(1)
+              : "",
+            ustaadName: localStudent.teacherName || "",
+          }));
+        }
+      })
+      .catch(() => {});
+  }, [mobileNumber]);
 
   const cardRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);

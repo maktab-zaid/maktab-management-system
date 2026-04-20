@@ -14,7 +14,6 @@ import {
   type FeeRecord,
   type Session,
   type Student,
-  addParentActivity,
   createId,
   getFees,
   getStudents,
@@ -658,8 +657,8 @@ function AddFeeModal({ students, onClose, onSave }: AddFeeModalProps) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function FeesPage({ session, setActivePage }: FeesPageProps) {
-  const allStudents = getStudents();
-  const [records, setRecords] = useState<FeeRecord[]>(() => getFees());
+  const [allStudents, setAllStudents] = useState<Student[]>([]);
+  const [records, setRecords] = useState<FeeRecord[]>([]);
   const [filter, setFilter] = useState<FilterOption>("All");
   const [search, setSearch] = useState("");
   const [reminderFee, setReminderFee] = useState<FeeRecord | null>(null);
@@ -668,12 +667,15 @@ export default function FeesPage({ session, setActivePage }: FeesPageProps) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  // Track parent activity
+  // Load from Supabase on mount
   useEffect(() => {
-    if (session.role === "parent" && session.mobile) {
-      addParentActivity(session.mobile, "Viewed fees");
-    }
-  }, [session.role, session.mobile]);
+    getStudents()
+      .then(setAllStudents)
+      .catch(() => setAllStudents([]));
+    getFees()
+      .then(setRecords)
+      .catch(() => setRecords([]));
+  }, []);
 
   // ── Role-based filtering ──────────────────────────────────────────────────
 
@@ -733,35 +735,28 @@ export default function FeesPage({ session, setActivePage }: FeesPageProps) {
 
   function toggleStatus(id: string) {
     const target = records.find((r) => r.id === id);
-    const wasToggling = target?.status === "pending"; // pending → paid transition
-    setRecords((prev) => {
-      const updated = prev.map((r) =>
-        r.id === id
-          ? {
-              ...r,
-              status:
-                r.status === "paid"
-                  ? "pending"
-                  : ("paid" as "paid" | "pending"),
-            }
-          : r,
-      );
-      saveFees(updated);
-      return updated;
-    });
+    const wasToggling = target?.status === "pending";
+    const updated = records.map((r) =>
+      r.id === id
+        ? {
+            ...r,
+            status:
+              r.status === "paid" ? "pending" : ("paid" as "paid" | "pending"),
+          }
+        : r,
+    );
+    setRecords(updated);
+    saveFees(updated);
     showSuccess("Fee status updated.");
-    // For teacher: when marking as PAID, show WhatsApp confirmation modal
     if (session.role === "teacher" && wasToggling && target) {
       setPaidConfirmFee(target);
     }
   }
 
   function handleAddFee(rec: FeeRecord) {
-    setRecords((prev) => {
-      const updated = [...prev, rec];
-      saveFees(updated);
-      return updated;
-    });
+    const updated = [...records, rec];
+    setRecords(updated);
+    saveFees(updated);
     showSuccess(`Fee record added for ${rec.studentName}.`);
   }
 

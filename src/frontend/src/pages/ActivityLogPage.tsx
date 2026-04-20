@@ -13,7 +13,7 @@ import {
   UserMinus,
   UserPlus,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 interface ActivityLogPageProps {
   setActivePage?: (page: AppPage) => void;
@@ -91,8 +91,13 @@ export default function ActivityLogPage({
 }: ActivityLogPageProps) {
   const [search, setSearch] = useState("");
   const [sessionFilter, setSessionFilter] = useState<SessionFilter>("All");
+  const [logs, setLogs] = useState<ActivityLog[]>([]);
 
-  const logs = useMemo(() => getActivityLog(), []);
+  useEffect(() => {
+    getActivityLog()
+      .then(setLogs)
+      .catch(() => setLogs([]));
+  }, []);
 
   const filtered = useMemo(() => {
     return logs.filter((entry) => {

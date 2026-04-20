@@ -38,12 +38,17 @@ export default function UstaadProfilePage({ teacherName, onBack }: Props) {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const existing = getUstaadProfile(teacherName);
-    if (existing) {
-      setForm(existing);
-    } else {
-      setForm((p) => ({ ...p, name: teacherName }));
-    }
+    getUstaadProfile(teacherName)
+      .then((existing) => {
+        if (existing) {
+          setForm(existing);
+        } else {
+          setForm((p) => ({ ...p, name: teacherName }));
+        }
+      })
+      .catch(() => {
+        setForm((p) => ({ ...p, name: teacherName }));
+      });
   }, [teacherName]);
 
   const handleChange = (field: keyof UstaadProfile, value: string) => {
@@ -52,14 +57,10 @@ export default function UstaadProfilePage({ teacherName, onBack }: Props) {
 
   const handleSave = () => {
     setSaving(true);
-    try {
-      saveUstaadProfile({ ...form, name: teacherName });
-      toast.success("Profile saved successfully");
-    } catch {
-      toast.error("Failed to save profile");
-    } finally {
-      setSaving(false);
-    }
+    saveUstaadProfile({ ...form, name: teacherName })
+      .then(() => toast.success("Profile saved successfully"))
+      .catch(() => toast.error("Failed to save profile"))
+      .finally(() => setSaving(false));
   };
 
   return (

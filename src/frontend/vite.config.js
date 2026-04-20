@@ -42,6 +42,10 @@ export default defineConfig({
     environment("all", { prefix: "DFX_" }),
     environment(["II_URL"]),
     environment(["STORAGE_GATEWAY_URL"]),
+    environment(
+      { VITE_SUPABASE_URL: "", VITE_SUPABASE_ANON_KEY: "" },
+      { defineOn: "import.meta.env" },
+    ),
     react(),
   ],
   resolve: {

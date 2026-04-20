@@ -1,4 +1,7 @@
-// Centralized localStorage data store for Madrasa Management System
+// Centralized data store for Madrasa Management System
+// All data operations go through Supabase. Session stays in localStorage.
+
+import { supabase } from "./supabase";
 
 export function createId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -27,22 +30,21 @@ export interface Student {
   admissionDate?: string;
   /** Class/level of the student e.g. Hifz, Nazra */
   studentClass?: string;
-  /** @deprecated Use timeSlot instead. Kept for backward-compat migration. */
+  /** @deprecated Use timeSlot instead. */
   className?: string;
 }
 
 export interface Teacher {
   id: string;
   name: string;
-  /** Sessions this Ustaad teaches. Can be array of shifts. */
+  /** Sessions this Ustaad teaches. */
   shifts?: string[];
-  /** Sessions this Ustaad teaches. Stored as comma-separated string or array. */
+  /** Sessions this Ustaad teaches (comma-separated or array). */
   timeSlot?: string | string[];
   mobile: string;
-  /** Admin-approved mobile number for login */
   mobileNumber?: string;
   salary?: number;
-  /** @deprecated Removed from system. */
+  /** @deprecated */
   className?: string;
 }
 
@@ -64,7 +66,6 @@ export interface FeeRecord {
   status: "paid" | "pending";
 }
 
-/** Structured sabak record per section */
 export interface SabakRecord {
   id: string;
   studentId: string;
@@ -76,12 +77,9 @@ export interface SabakRecord {
   remarks: string;
   updatedBy: string;
   updatedAt: string;
-  // Quran-specific
   surahName?: string;
   ayatNumber?: number;
-  // Count-based (Urdu / Dua / Hadees)
   countCompleted?: number;
-  // 7 manual sections
   qaida?: string;
   ammaPara?: string;
   quran?: string;
@@ -89,14 +87,12 @@ export interface SabakRecord {
   hadees?: string;
   urdu?: string;
   hifz?: string;
-  // Legacy / backward-compat
   lessonName?: string;
   progress?: number;
   sabakType?: "urdu" | "dua" | "hadees" | "manual";
   sabakManual?: string;
 }
 
-/** Legacy sabak record (kept for backward-compat reads) */
 export interface LegacySabakRecord {
   id: string;
   studentId: string;
@@ -132,11 +128,9 @@ export interface Session {
   role: "admin" | "teacher" | "parent";
   name: string;
   mobile?: string;
-  /** @deprecated Not used in session system. */
+  /** @deprecated */
   teacherClass?: string;
-  /** Primary time slot for the logged-in teacher */
   teacherTimeSlot?: string;
-  /** All sessions this teacher teaches */
   teacherSessions?: string[];
 }
 
@@ -159,8 +153,6 @@ export interface ParentActivity {
   recentActivities: Array<{ action: string; timestamp: string }>;
 }
 
-// ─── Activity Log ─────────────────────────────────────────────────────────────
-
 export interface ActivityLog {
   id: string;
   timestamp: string;
@@ -170,8 +162,6 @@ export interface ActivityLog {
   targetStudentName: string;
   details?: string;
 }
-
-// ─── New Feature Types ────────────────────────────────────────────────────────
 
 export interface AdminProfile {
   name: string;
@@ -234,91 +224,524 @@ export interface ParentProfile {
   updatedAt: string;
 }
 
-// ─── Storage Keys ─────────────────────────────────────────────────────────────
+// ─── Session (localStorage only — auth state) ─────────────────────────────────
 
-const KEYS = {
-  students: "madrasa_students",
-  teachers: "madrasa_teachers",
-  attendance: "madrasa_attendance",
-  fees: "madrasa_fees",
-  sabak: "maktab_sabak_records",
-  notices: "madrasa_notices",
-  gallery: "madrasa_gallery",
-  session: "madrasa_session",
-  salaries: "madrasa_salaries",
-  parentActivity: "madrasa_parent_activity",
-  adminProfile: "madrasa_admin_profile",
-  appSettings: "madrasa_app_settings",
-  notifications: "madrasa_notifications",
-  ustaadAttendance: "madrasa_ustaad_attendance",
-  ustaadProfiles: "madrasa_ustaad_profiles",
-  parentProfiles: "madrasa_parent_profiles",
-  activityLog: "maktab_activity_log",
-} as const;
+const SESSION_KEY = "madrasa_session";
 
-// ─── Generic helpers ──────────────────────────────────────────────────────────
-
-function load<T>(key: string): T[] {
+export const getSession = (): Session | null => {
   try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T[]) : [];
+    const raw = localStorage.getItem(SESSION_KEY);
+    return raw ? (JSON.parse(raw) as Session) : null;
   } catch {
-    return [];
+    return null;
   }
-}
+};
 
-function save<T>(key: string, data: T[]): void {
-  localStorage.setItem(key, JSON.stringify(data));
-}
+export const saveSession = (s: Session): void => {
+  localStorage.setItem(SESSION_KEY, JSON.stringify(s));
+};
 
-function loadSingle<T>(key: string): T | null {
+export const clearSession = (): void => {
+  localStorage.removeItem(SESSION_KEY);
+};
+
+// ─── Admin Profile (localStorage — device-level settings) ────────────────────
+
+const ADMIN_PROFILE_KEY = "madrasa_admin_profile";
+const APP_SETTINGS_KEY = "madrasa_app_settings";
+
+const DEFAULT_SETTINGS: AppSettings = {
+  darkMode: false,
+  desktopView: false,
+  academicYear: "2026-27",
+};
+
+export function getAdminProfile(): AdminProfile | null {
   try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : null;
+    const raw = localStorage.getItem(ADMIN_PROFILE_KEY);
+    return raw ? (JSON.parse(raw) as AdminProfile) : null;
   } catch {
     return null;
   }
 }
 
-// ─── Migration: className → timeSlot ─────────────────────────────────────────
-
-/**
- * Maps legacy class names to sessions for migration.
- * Called on every getStudents() call to handle old data gracefully.
- */
-function migrateStudent(s: Student): Student {
-  // If student has no timeSlot but has className, derive timeSlot from className
-  if (!s.timeSlot && s.className) {
-    // Legacy data — assign a default session based on class index
-    const morning = ["Ibtidayyah", "Nisf Qaidah"];
-    const afternoon = [
-      "Mukammal Qaidah",
-      "Nisf Amma Para",
-      "Mukammal Amma Para",
-    ];
-    if (morning.some((c) => s.className?.includes(c))) {
-      return { ...s, timeSlot: "morning" };
-    }
-    if (afternoon.some((c) => s.className?.includes(c))) {
-      return { ...s, timeSlot: "afternoon" };
-    }
-    return { ...s, timeSlot: "evening" };
-  }
-  return s;
+export function saveAdminProfile(profile: AdminProfile): void {
+  localStorage.setItem(ADMIN_PROFILE_KEY, JSON.stringify(profile));
 }
 
-// ─── CRUD helpers ─────────────────────────────────────────────────────────────
+export function getAppSettings(): AppSettings {
+  try {
+    const raw = localStorage.getItem(APP_SETTINGS_KEY);
+    return raw ? (JSON.parse(raw) as AppSettings) : { ...DEFAULT_SETTINGS };
+  } catch {
+    return { ...DEFAULT_SETTINGS };
+  }
+}
 
-export const getStudents = (): Student[] =>
-  load<Student>(KEYS.students).map(migrateStudent);
-export const saveStudents = (d: Student[]) => save(KEYS.students, d);
+export function saveAppSettings(settings: AppSettings): void {
+  localStorage.setItem(APP_SETTINGS_KEY, JSON.stringify(settings));
+}
 
-export const getTeachers = (): Teacher[] => load<Teacher>(KEYS.teachers);
-export const saveTeachers = (d: Teacher[]) => save(KEYS.teachers, d);
+export const loadAdminProfile = getAdminProfile;
+export const loadAppSettings = getAppSettings;
+
+// ─── Column name helpers ──────────────────────────────────────────────────────
+
+/** Map snake_case DB rows → camelCase Student objects */
+// biome-ignore lint/suspicious/noExplicitAny: db row shape unknown at compile time
+function rowToStudent(row: Record<string, any>): Student {
+  return {
+    id: row.id,
+    name: row.name,
+    fatherName: row.father_name ?? "",
+    parentMobile: row.parent_mobile ?? "",
+    timeSlot: row.time_slot ?? "",
+    teacherName: row.teacher_name ?? "",
+    fees: Number(row.fees ?? 0),
+    feesStatus: row.fees_status ?? "pending",
+    address: row.address ?? "",
+    rollNumber: row.roll_number ?? "",
+    admissionDate: row.admission_date ?? "",
+    studentClass: row.student_class ?? "",
+    className: row.class_name ?? "",
+  };
+}
+
+function studentToRow(s: Student): Record<string, unknown> {
+  return {
+    id: s.id,
+    name: s.name,
+    father_name: s.fatherName,
+    parent_mobile: s.parentMobile,
+    time_slot: s.timeSlot,
+    teacher_name: s.teacherName,
+    fees: s.fees,
+    fees_status: s.feesStatus,
+    address: s.address ?? "",
+    roll_number: s.rollNumber ?? "",
+    admission_date: s.admissionDate ?? "",
+    student_class: s.studentClass ?? "",
+    class_name: s.className ?? "",
+  };
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: db row shape unknown at compile time
+function rowToTeacher(row: Record<string, any>): Teacher {
+  let shifts: string[] = [];
+  try {
+    shifts = Array.isArray(row.shifts)
+      ? row.shifts
+      : JSON.parse(row.shifts || "[]");
+  } catch {
+    shifts = [];
+  }
+  return {
+    id: row.id,
+    name: row.name,
+    mobile: row.mobile ?? "",
+    mobileNumber: row.mobile_number ?? "",
+    salary: Number(row.salary ?? 0),
+    shifts,
+    timeSlot: row.time_slot ?? "",
+  };
+}
+
+function teacherToRow(t: Teacher): Record<string, unknown> {
+  const shifts = t.shifts ?? [];
+  return {
+    id: t.id,
+    name: t.name,
+    mobile: t.mobile,
+    mobile_number: t.mobileNumber ?? "",
+    salary: t.salary ?? 0,
+    shifts: JSON.stringify(shifts),
+    time_slot: Array.isArray(t.timeSlot)
+      ? t.timeSlot.join(",")
+      : (t.timeSlot ?? ""),
+  };
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: db row shape unknown at compile time
+function rowToAttendance(row: Record<string, any>): AttendanceRecord {
+  return {
+    id: row.id,
+    studentId: row.student_id,
+    studentName: row.student_name ?? "",
+    date: row.date,
+    status: row.status,
+    markedBy: row.marked_by ?? "",
+  };
+}
+
+function attendanceToRow(r: AttendanceRecord): Record<string, unknown> {
+  return {
+    id: r.id,
+    student_id: r.studentId,
+    student_name: r.studentName,
+    date: r.date,
+    status: r.status,
+    marked_by: r.markedBy,
+  };
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: db row shape unknown at compile time
+function rowToFee(row: Record<string, any>): FeeRecord {
+  return {
+    id: row.id,
+    studentId: row.student_id,
+    studentName: row.student_name ?? "",
+    month: row.month,
+    amount: Number(row.amount ?? 0),
+    status: row.status,
+  };
+}
+
+function feeToRow(f: FeeRecord): Record<string, unknown> {
+  return {
+    id: f.id,
+    student_id: f.studentId,
+    student_name: f.studentName,
+    month: f.month,
+    amount: f.amount,
+    status: f.status,
+  };
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: db row shape unknown at compile time
+function rowToSabak(row: Record<string, any>): SabakRecord {
+  return {
+    id: row.id,
+    studentId: row.student_id,
+    studentName: row.student_name ?? "",
+    section: row.section || undefined,
+    currentLesson: row.current_lesson ?? "",
+    previousLesson: row.previous_lesson ?? "",
+    progressPercent: Number(row.progress_percent ?? 0),
+    remarks: row.remarks ?? "",
+    updatedBy: row.updated_by ?? "",
+    updatedAt: row.updated_at ?? "",
+    surahName: row.surah_name ?? "",
+    ayatNumber: Number(row.ayat_number ?? 0),
+    countCompleted: Number(row.count_completed ?? 0),
+    qaida: row.qaida ?? "",
+    ammaPara: row.amma_para ?? "",
+    quran: row.quran ?? "",
+    dua: row.dua ?? "",
+    hadees: row.hadees ?? "",
+    urdu: row.urdu ?? "",
+    hifz: row.hifz ?? "",
+    lessonName: row.lesson_name ?? "",
+    progress: Number(row.progress ?? 0),
+    sabakType: row.sabak_type || undefined,
+    sabakManual: row.sabak_manual ?? "",
+  };
+}
+
+function sabakToRow(r: SabakRecord): Record<string, unknown> {
+  return {
+    id: r.id,
+    student_id: r.studentId,
+    student_name: r.studentName,
+    section: r.section ?? "",
+    current_lesson: r.currentLesson ?? "",
+    previous_lesson: r.previousLesson ?? "",
+    progress_percent: r.progressPercent ?? 0,
+    remarks: r.remarks,
+    updated_by: r.updatedBy,
+    updated_at: r.updatedAt,
+    surah_name: r.surahName ?? "",
+    ayat_number: r.ayatNumber ?? 0,
+    count_completed: r.countCompleted ?? 0,
+    qaida: r.qaida ?? "",
+    amma_para: r.ammaPara ?? "",
+    quran: r.quran ?? "",
+    dua: r.dua ?? "",
+    hadees: r.hadees ?? "",
+    urdu: r.urdu ?? "",
+    hifz: r.hifz ?? "",
+    lesson_name: r.lessonName ?? "",
+    progress: r.progress ?? 0,
+    sabak_type: r.sabakType ?? "",
+    sabak_manual: r.sabakManual ?? "",
+  };
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: db row shape unknown at compile time
+function rowToNotice(row: Record<string, any>): Notice {
+  return {
+    id: row.id,
+    title: row.title,
+    message: row.message ?? "",
+    date: row.date ?? "",
+    createdBy: row.created_by ?? "",
+  };
+}
+
+function noticeToRow(n: Notice): Record<string, unknown> {
+  return {
+    id: n.id,
+    title: n.title,
+    message: n.message,
+    date: n.date,
+    created_by: n.createdBy,
+  };
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: db row shape unknown at compile time
+function rowToGallery(row: Record<string, any>): GalleryItem {
+  return {
+    id: row.id,
+    title: row.title,
+    url: row.url ?? "",
+    type: row.type ?? "image",
+    addedAt: row.added_at ?? "",
+    uploadedBy: row.uploaded_by ?? "",
+    classTag: row.class_tag ?? "",
+  };
+}
+
+function galleryToRow(g: GalleryItem): Record<string, unknown> {
+  return {
+    id: g.id,
+    title: g.title,
+    url: g.url,
+    type: g.type,
+    added_at: g.addedAt,
+    uploaded_by: g.uploadedBy ?? "",
+    class_tag: g.classTag ?? "",
+  };
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: db row shape unknown at compile time
+function rowToSalary(row: Record<string, any>): SalaryRecord {
+  return {
+    id: row.id,
+    teacherId: row.teacher_id ?? "",
+    teacherName: row.teacher_name ?? "",
+    month: row.month ?? "",
+    year: row.year ?? "",
+    amount: Number(row.amount ?? 0),
+    status: row.status ?? "pending",
+    paidDate: row.paid_date ?? "",
+  };
+}
+
+function salaryToRow(r: SalaryRecord): Record<string, unknown> {
+  return {
+    id: r.id,
+    teacher_id: r.teacherId,
+    teacher_name: r.teacherName,
+    month: r.month,
+    year: r.year,
+    amount: r.amount,
+    status: r.status,
+    paid_date: r.paidDate ?? "",
+  };
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: db row shape unknown at compile time
+function rowToActivityLog(row: Record<string, any>): ActivityLog {
+  return {
+    id: row.id,
+    timestamp: row.timestamp ?? "",
+    actorName: row.actor_name ?? "",
+    actorRole: row.actor_role ?? "admin",
+    action: row.action ?? "added_student",
+    targetStudentName: row.target_student_name ?? "",
+    details: row.details ?? "",
+  };
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: db row shape unknown at compile time
+function rowToNotification(row: Record<string, any>): Notification {
+  return {
+    id: row.id,
+    title: row.title ?? "",
+    message: row.message ?? "",
+    date: row.date ?? "",
+    isRead: row.is_read ?? false,
+    type: row.type ?? "info",
+    timestamp: row.timestamp ?? "",
+    forRole: row.for_role ?? "all",
+  };
+}
+
+function notificationToRow(n: Notification): Record<string, unknown> {
+  return {
+    id: n.id,
+    title: n.title,
+    message: n.message,
+    date: n.date,
+    is_read: n.isRead,
+    type: n.type ?? "info",
+    timestamp: n.timestamp ?? "",
+    for_role: n.forRole ?? "all",
+  };
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: db row shape unknown at compile time
+function rowToUstaadAttendance(row: Record<string, any>): UstaadAttendance {
+  return {
+    id: row.id,
+    ustaadId: row.ustaad_id ?? "",
+    ustaadName: row.ustaad_name ?? "",
+    date: row.date ?? "",
+    status: row.status ?? "present",
+    notes: row.notes ?? "",
+  };
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: db row shape unknown at compile time
+function rowToUstaadProfile(row: Record<string, any>): UstaadProfile {
+  return {
+    id: row.id,
+    name: row.name,
+    phone: row.phone ?? "",
+    email: row.email ?? "",
+    bio: row.bio ?? "",
+    timeSlot: row.time_slot ?? "",
+    address: row.address ?? "",
+    profileImage: row.profile_image ?? "",
+    createdAt: row.created_at ?? "",
+  };
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: db row shape unknown at compile time
+function rowToParentProfile(row: Record<string, any>): ParentProfile {
+  return {
+    mobile: row.mobile,
+    name: row.name ?? "",
+    address: row.address ?? "",
+    profileImage: row.profile_image ?? "",
+    updatedAt: row.updated_at ?? "",
+  };
+}
+
+// ─── Students ─────────────────────────────────────────────────────────────────
+
+export async function getStudents(): Promise<Student[]> {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("students")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.error("[Supabase] getStudents:", error.message);
+      return [];
+    }
+    return (data ?? []).map(rowToStudent);
+  } catch (e) {
+    console.error("[Supabase] getStudents exception:", e);
+    return [];
+  }
+}
+
+export async function saveStudents(students: Student[]): Promise<void> {
+  if (!supabase || students.length === 0) return;
+  try {
+    const { error } = await supabase
+      .from("students")
+      .upsert(students.map(studentToRow));
+    if (error) console.error("[Supabase] saveStudents:", error.message);
+  } catch (e) {
+    console.error("[Supabase] saveStudents exception:", e);
+  }
+}
+
+export async function addStudent(student: Student): Promise<Student> {
+  if (!supabase) return student;
+  try {
+    const { error } = await supabase
+      .from("students")
+      .insert(studentToRow(student));
+    if (error) console.error("[Supabase] addStudent:", error.message);
+  } catch (e) {
+    console.error("[Supabase] addStudent exception:", e);
+  }
+  return student;
+}
+
+export async function updateStudent(student: Student): Promise<void> {
+  if (!supabase) return;
+  try {
+    const { error } = await supabase
+      .from("students")
+      .upsert(studentToRow(student));
+    if (error) console.error("[Supabase] updateStudent:", error.message);
+  } catch (e) {
+    console.error("[Supabase] updateStudent exception:", e);
+  }
+}
+
+export async function deleteStudent(id: string): Promise<void> {
+  if (!supabase) return;
+  try {
+    const { error } = await supabase.from("students").delete().eq("id", id);
+    if (error) console.error("[Supabase] deleteStudent:", error.message);
+  } catch (e) {
+    console.error("[Supabase] deleteStudent exception:", e);
+  }
+}
+
+// ─── Teachers ─────────────────────────────────────────────────────────────────
+
+export async function getTeachers(): Promise<Teacher[]> {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("teachers")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.error("[Supabase] getTeachers:", error.message);
+      return [];
+    }
+    return (data ?? []).map(rowToTeacher);
+  } catch (e) {
+    console.error("[Supabase] getTeachers exception:", e);
+    return [];
+  }
+}
+
+export async function saveTeachers(teachers: Teacher[]): Promise<void> {
+  if (!supabase || teachers.length === 0) return;
+  try {
+    const { error } = await supabase
+      .from("teachers")
+      .upsert(teachers.map(teacherToRow));
+    if (error) console.error("[Supabase] saveTeachers:", error.message);
+  } catch (e) {
+    console.error("[Supabase] saveTeachers exception:", e);
+  }
+}
+
+export async function addTeacher(teacher: Teacher): Promise<Teacher> {
+  if (!supabase) return teacher;
+  try {
+    const { error } = await supabase
+      .from("teachers")
+      .insert(teacherToRow(teacher));
+    if (error) console.error("[Supabase] addTeacher:", error.message);
+  } catch (e) {
+    console.error("[Supabase] addTeacher exception:", e);
+  }
+  return teacher;
+}
+
+export async function deleteTeacher(id: string): Promise<void> {
+  if (!supabase) return;
+  try {
+    const { error } = await supabase.from("teachers").delete().eq("id", id);
+    if (error) console.error("[Supabase] deleteTeacher:", error.message);
+  } catch (e) {
+    console.error("[Supabase] deleteTeacher exception:", e);
+  }
+}
 
 /** Returns all shift names for a given teacher name */
-export function getTeacherShifts(teacherName: string): string[] {
-  const teachers = getTeachers();
+export async function getTeacherShifts(teacherName: string): Promise<string[]> {
+  const teachers = await getTeachers();
   const teacher = teachers.find(
     (t) => t.name.toLowerCase() === teacherName.toLowerCase(),
   );
@@ -331,293 +754,589 @@ export function getTeacherShifts(teacherName: string): string[] {
   return [];
 }
 
-export const getAttendance = (): AttendanceRecord[] =>
-  load<AttendanceRecord>(KEYS.attendance);
-export const saveAttendance = (d: AttendanceRecord[]) =>
-  save(KEYS.attendance, d);
+// ─── Attendance ───────────────────────────────────────────────────────────────
 
-export const getFees = (): FeeRecord[] => load<FeeRecord>(KEYS.fees);
-export const saveFees = (d: FeeRecord[]) => save(KEYS.fees, d);
-
-export const getSabakRecords = (): SabakRecord[] =>
-  load<SabakRecord>(KEYS.sabak);
-export const saveSabakRecords = (d: SabakRecord[]) => save(KEYS.sabak, d);
-
-/** Add or update a single sabak record (matched by studentId+section) */
-export function upsertSabakRecord(record: SabakRecord): void {
-  const all = getSabakRecords();
-  const idx = record.section
-    ? all.findIndex(
-        (r) => r.studentId === record.studentId && r.section === record.section,
-      )
-    : -1;
-  if (idx >= 0) {
-    all.unshift(record);
-    all.splice(idx + 1, 1);
-  } else {
-    all.unshift(record);
+export async function getAttendance(): Promise<AttendanceRecord[]> {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("attendance")
+      .select("*")
+      .order("date", { ascending: false });
+    if (error) {
+      console.error("[Supabase] getAttendance:", error.message);
+      return [];
+    }
+    return (data ?? []).map(rowToAttendance);
+  } catch (e) {
+    console.error("[Supabase] getAttendance exception:", e);
+    return [];
   }
-  saveSabakRecords(all);
 }
 
-/** Get latest record per section for a student */
-export function getStudentSabakLatest(
+export async function saveAttendance(
+  records: AttendanceRecord[],
+): Promise<void> {
+  if (!supabase || records.length === 0) return;
+  try {
+    const { error } = await supabase
+      .from("attendance")
+      .upsert(records.map(attendanceToRow));
+    if (error) console.error("[Supabase] saveAttendance:", error.message);
+  } catch (e) {
+    console.error("[Supabase] saveAttendance exception:", e);
+  }
+}
+
+// ─── Fees ─────────────────────────────────────────────────────────────────────
+
+export async function getFees(): Promise<FeeRecord[]> {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("fees")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.error("[Supabase] getFees:", error.message);
+      return [];
+    }
+    return (data ?? []).map(rowToFee);
+  } catch (e) {
+    console.error("[Supabase] getFees exception:", e);
+    return [];
+  }
+}
+
+export async function saveFees(fees: FeeRecord[]): Promise<void> {
+  if (!supabase || fees.length === 0) return;
+  try {
+    const { error } = await supabase.from("fees").upsert(fees.map(feeToRow));
+    if (error) console.error("[Supabase] saveFees:", error.message);
+  } catch (e) {
+    console.error("[Supabase] saveFees exception:", e);
+  }
+}
+
+// ─── Sabak Records ────────────────────────────────────────────────────────────
+
+export async function getSabakRecords(): Promise<SabakRecord[]> {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("sabak_records")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.error("[Supabase] getSabakRecords:", error.message);
+      return [];
+    }
+    return (data ?? []).map(rowToSabak);
+  } catch (e) {
+    console.error("[Supabase] getSabakRecords exception:", e);
+    return [];
+  }
+}
+
+export async function saveSabakRecords(records: SabakRecord[]): Promise<void> {
+  if (!supabase || records.length === 0) return;
+  try {
+    const { error } = await supabase
+      .from("sabak_records")
+      .upsert(records.map(sabakToRow));
+    if (error) console.error("[Supabase] saveSabakRecords:", error.message);
+  } catch (e) {
+    console.error("[Supabase] saveSabakRecords exception:", e);
+  }
+}
+
+export async function upsertSabakRecord(record: SabakRecord): Promise<void> {
+  if (!supabase) return;
+  try {
+    const { error } = await supabase
+      .from("sabak_records")
+      .upsert(sabakToRow(record));
+    if (error) console.error("[Supabase] upsertSabakRecord:", error.message);
+  } catch (e) {
+    console.error("[Supabase] upsertSabakRecord exception:", e);
+  }
+}
+
+export async function getStudentSabakLatest(
   studentId: string,
-): Partial<Record<string, SabakRecord>> {
-  const all = getSabakRecords().filter(
+): Promise<Partial<Record<string, SabakRecord>>> {
+  const all = await getSabakRecords();
+  const studentRecords = all.filter(
     (r) => r.studentId === studentId && r.section,
   );
   const result: Partial<Record<string, SabakRecord>> = {};
-  for (const r of all) {
+  for (const r of studentRecords) {
     if (r.section && !result[r.section]) result[r.section] = r;
   }
   return result;
 }
 
-/** Get all records for a student+section (history) */
-export function getSabakHistory(
+export async function getSabakHistory(
   studentId: string,
   section: SabakRecord["section"],
-): SabakRecord[] {
-  return getSabakRecords().filter(
-    (r) => r.studentId === studentId && r.section === section,
-  );
+): Promise<SabakRecord[]> {
+  const all = await getSabakRecords();
+  return all.filter((r) => r.studentId === studentId && r.section === section);
 }
 
 // Backward-compat aliases
 export const getSabak = getSabakRecords;
 export const saveSabak = saveSabakRecords;
 
-export const getNotices = (): Notice[] => load<Notice>(KEYS.notices);
-export const saveNotices = (d: Notice[]) => save(KEYS.notices, d);
+// ─── Notices ──────────────────────────────────────────────────────────────────
 
-export const getGallery = (): GalleryItem[] => load<GalleryItem>(KEYS.gallery);
-export const saveGallery = (d: GalleryItem[]) => save(KEYS.gallery, d);
-
-export const getSession = (): Session | null =>
-  loadSingle<Session>(KEYS.session);
-export const saveSession = (s: Session): void =>
-  localStorage.setItem(KEYS.session, JSON.stringify(s));
-export const clearSession = (): void => localStorage.removeItem(KEYS.session);
-
-// ─── Salary helpers ───────────────────────────────────────────────────────────
-
-export const getSalaries = (): SalaryRecord[] =>
-  load<SalaryRecord>(KEYS.salaries);
-export const saveSalaries = (d: SalaryRecord[]) => save(KEYS.salaries, d);
-
-// ─── Parent Activity helpers ──────────────────────────────────────────────────
-
-export const getParentActivity = (): ParentActivity[] =>
-  load<ParentActivity>(KEYS.parentActivity);
-export const saveParentActivity = (d: ParentActivity[]) =>
-  save(KEYS.parentActivity, d);
-
-export function updateParentLastLogin(
-  mobile: string,
-  studentId: string,
-  studentName: string,
-): void {
-  const activities = getParentActivity();
-  const now = new Date().toISOString();
-  const idx = activities.findIndex((a) => a.parentMobile === mobile);
-  if (idx >= 0) {
-    activities[idx].lastLogin = now;
-    activities[idx].studentId = studentId;
-    activities[idx].studentName = studentName;
-  } else {
-    activities.push({
-      parentMobile: mobile,
-      studentId,
-      studentName,
-      lastLogin: now,
-      recentActivities: [],
-    });
-  }
-  saveParentActivity(activities);
-}
-
-export function addParentActivity(mobile: string, action: string): void {
-  const activities = getParentActivity();
-  const now = new Date().toISOString();
-  const idx = activities.findIndex((a) => a.parentMobile === mobile);
-  const entry = { action, timestamp: now };
-  if (idx >= 0) {
-    activities[idx].recentActivities = [
-      entry,
-      ...activities[idx].recentActivities,
-    ].slice(0, 20);
-    saveParentActivity(activities);
+export async function getNotices(): Promise<Notice[]> {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("notices")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.error("[Supabase] getNotices:", error.message);
+      return [];
+    }
+    return (data ?? []).map(rowToNotice);
+  } catch (e) {
+    console.error("[Supabase] getNotices exception:", e);
+    return [];
   }
 }
 
-// ─── Admin Profile helpers ────────────────────────────────────────────────────
-
-export function getAdminProfile(): AdminProfile | null {
-  return loadSingle<AdminProfile>(KEYS.adminProfile);
-}
-
-export function saveAdminProfile(profile: AdminProfile): void {
-  localStorage.setItem(KEYS.adminProfile, JSON.stringify(profile));
-}
-
-// ─── App Settings helpers ─────────────────────────────────────────────────────
-
-const DEFAULT_SETTINGS: AppSettings = {
-  darkMode: false,
-  desktopView: false,
-  academicYear: "2026-27",
-};
-
-export function getAppSettings(): AppSettings {
-  const stored = loadSingle<AppSettings>(KEYS.appSettings);
-  return stored ?? { ...DEFAULT_SETTINGS };
-}
-
-export function saveAppSettings(settings: AppSettings): void {
-  localStorage.setItem(KEYS.appSettings, JSON.stringify(settings));
-}
-
-export const loadAdminProfile = getAdminProfile;
-export const loadAppSettings = getAppSettings;
-
-// ─── Notification helpers ─────────────────────────────────────────────────────
-
-export function getNotifications(): Notification[] {
-  return load<Notification>(KEYS.notifications);
-}
-
-export function loadNotifications(): Notification[] {
-  return getNotifications();
-}
-
-export function saveNotifications(items: Notification[]): void {
-  save(KEYS.notifications, items);
-}
-
-export function saveNotification(n: Notification): void {
-  const all = getNotifications();
-  all.unshift(n);
-  save(KEYS.notifications, all);
-}
-
-export function markNotificationRead(id: string): void {
-  const all = getNotifications();
-  const idx = all.findIndex((n) => n.id === id);
-  if (idx >= 0) {
-    all[idx].isRead = true;
-    save(KEYS.notifications, all);
+export async function saveNotices(notices: Notice[]): Promise<void> {
+  if (!supabase || notices.length === 0) return;
+  try {
+    const { error } = await supabase
+      .from("notices")
+      .upsert(notices.map(noticeToRow));
+    if (error) console.error("[Supabase] saveNotices:", error.message);
+  } catch (e) {
+    console.error("[Supabase] saveNotices exception:", e);
   }
 }
 
-export function markAllNotificationsRead(): void {
-  const all = getNotifications().map((n) => ({ ...n, isRead: true }));
-  save(KEYS.notifications, all);
-}
+// ─── Gallery ──────────────────────────────────────────────────────────────────
 
-export function getUnreadCount(): number {
-  return getNotifications().filter((n) => !n.isRead).length;
-}
-
-// ─── Ustaad Attendance helpers ────────────────────────────────────────────────
-
-export function getUstaadAttendance(): UstaadAttendance[] {
-  return load<UstaadAttendance>(KEYS.ustaadAttendance);
-}
-
-export function loadUstaadAttendance(): UstaadAttendance[] {
-  return getUstaadAttendance();
-}
-
-export function saveUstaadAttendance(records: UstaadAttendance[]): void {
-  save(KEYS.ustaadAttendance, records);
-}
-
-export function addUstaadAttendanceRecord(record: UstaadAttendance): void {
-  const all = getUstaadAttendance();
-  const idx = all.findIndex(
-    (r) => r.ustaadName === record.ustaadName && r.date === record.date,
-  );
-  if (idx >= 0) {
-    all[idx] = record;
-  } else {
-    all.push(record);
+export async function getGallery(): Promise<GalleryItem[]> {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("gallery")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.error("[Supabase] getGallery:", error.message);
+      return [];
+    }
+    return (data ?? []).map(rowToGallery);
+  } catch (e) {
+    console.error("[Supabase] getGallery exception:", e);
+    return [];
   }
-  save(KEYS.ustaadAttendance, all);
 }
 
-export function getUstaadAttendanceByDate(date: string): UstaadAttendance[] {
-  return getUstaadAttendance().filter((r) => r.date === date);
-}
-
-// ─── Ustaad Profile helpers ───────────────────────────────────────────────────
-
-export function getUstaadProfile(name: string): UstaadProfile | null {
-  const all = load<UstaadProfile>(KEYS.ustaadProfiles);
-  return all.find((p) => p.name === name) ?? null;
-}
-
-export function saveUstaadProfile(profile: UstaadProfile): void {
-  const all = load<UstaadProfile>(KEYS.ustaadProfiles);
-  const idx = all.findIndex((p) => p.name === profile.name);
-  if (idx >= 0) {
-    all[idx] = profile;
-  } else {
-    all.push(profile);
+export async function saveGallery(items: GalleryItem[]): Promise<void> {
+  if (!supabase || items.length === 0) return;
+  try {
+    const { error } = await supabase
+      .from("gallery")
+      .upsert(items.map(galleryToRow));
+    if (error) console.error("[Supabase] saveGallery:", error.message);
+  } catch (e) {
+    console.error("[Supabase] saveGallery exception:", e);
   }
-  save(KEYS.ustaadProfiles, all);
 }
 
-export function getParentProfileByMobile(mobile: string): ParentProfile | null {
-  const all = load<ParentProfile>(KEYS.parentProfiles);
-  return all.find((p) => p.mobile === mobile) ?? null;
-}
+// ─── Salaries ─────────────────────────────────────────────────────────────────
 
-export function saveParentProfileRecord(profile: ParentProfile): void {
-  const all = load<ParentProfile>(KEYS.parentProfiles);
-  const idx = all.findIndex((p) => p.mobile === profile.mobile);
-  if (idx >= 0) {
-    all[idx] = profile;
-  } else {
-    all.push(profile);
+export async function getSalaries(): Promise<SalaryRecord[]> {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("salaries")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.error("[Supabase] getSalaries:", error.message);
+      return [];
+    }
+    return (data ?? []).map(rowToSalary);
+  } catch (e) {
+    console.error("[Supabase] getSalaries exception:", e);
+    return [];
   }
-  save(KEYS.parentProfiles, all);
 }
 
-// ─── Activity Log helpers ─────────────────────────────────────────────────────
-
-export function getActivityLog(): ActivityLog[] {
-  return load<ActivityLog>(KEYS.activityLog);
+export async function saveSalaries(records: SalaryRecord[]): Promise<void> {
+  if (!supabase || records.length === 0) return;
+  try {
+    const { error } = await supabase
+      .from("salaries")
+      .upsert(records.map(salaryToRow));
+    if (error) console.error("[Supabase] saveSalaries:", error.message);
+  } catch (e) {
+    console.error("[Supabase] saveSalaries exception:", e);
+  }
 }
 
-export function addActivityLogEntry(
+// ─── Activity Log ─────────────────────────────────────────────────────────────
+
+export async function getActivityLog(): Promise<ActivityLog[]> {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("activity_log")
+      .select("*")
+      .order("timestamp", { ascending: false })
+      .limit(200);
+    if (error) {
+      console.error("[Supabase] getActivityLog:", error.message);
+      return [];
+    }
+    return (data ?? []).map(rowToActivityLog);
+  } catch (e) {
+    console.error("[Supabase] getActivityLog exception:", e);
+    return [];
+  }
+}
+
+export async function addActivityLogEntry(
   entry: Omit<ActivityLog, "id" | "timestamp">,
-): void {
-  const all = getActivityLog();
+): Promise<void> {
+  if (!supabase) return;
   const newEntry: ActivityLog = {
     ...entry,
     id: createId(),
     timestamp: new Date().toISOString(),
   };
-  const updated = [newEntry, ...all].slice(0, 200);
-  save(KEYS.activityLog, updated);
+  try {
+    const { error } = await supabase.from("activity_log").insert({
+      id: newEntry.id,
+      timestamp: newEntry.timestamp,
+      actor_name: newEntry.actorName,
+      actor_role: newEntry.actorRole,
+      action: newEntry.action,
+      target_student_name: newEntry.targetStudentName,
+      details: newEntry.details ?? "",
+    });
+    if (error) console.error("[Supabase] addActivityLogEntry:", error.message);
+  } catch (e) {
+    console.error("[Supabase] addActivityLogEntry exception:", e);
+  }
 }
 
-export function clearActivityLog(): void {
-  localStorage.removeItem(KEYS.activityLog);
+export async function clearActivityLog(): Promise<void> {
+  if (!supabase) return;
+  try {
+    const { error } = await supabase
+      .from("activity_log")
+      .delete()
+      .neq("id", "");
+    if (error) console.error("[Supabase] clearActivityLog:", error.message);
+  } catch (e) {
+    console.error("[Supabase] clearActivityLog exception:", e);
+  }
 }
+
+// ─── Notifications ────────────────────────────────────────────────────────────
+
+export async function getNotifications(): Promise<Notification[]> {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("notifications")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.error("[Supabase] getNotifications:", error.message);
+      return [];
+    }
+    return (data ?? []).map(rowToNotification);
+  } catch (e) {
+    console.error("[Supabase] getNotifications exception:", e);
+    return [];
+  }
+}
+
+export const loadNotifications = getNotifications;
+
+export async function saveNotifications(items: Notification[]): Promise<void> {
+  if (!supabase || items.length === 0) return;
+  try {
+    const { error } = await supabase
+      .from("notifications")
+      .upsert(items.map(notificationToRow));
+    if (error) console.error("[Supabase] saveNotifications:", error.message);
+  } catch (e) {
+    console.error("[Supabase] saveNotifications exception:", e);
+  }
+}
+
+export async function saveNotification(n: Notification): Promise<void> {
+  if (!supabase) return;
+  try {
+    const { error } = await supabase
+      .from("notifications")
+      .insert(notificationToRow(n));
+    if (error) console.error("[Supabase] saveNotification:", error.message);
+  } catch (e) {
+    console.error("[Supabase] saveNotification exception:", e);
+  }
+}
+
+export async function markNotificationRead(id: string): Promise<void> {
+  if (!supabase) return;
+  try {
+    const { error } = await supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("id", id);
+    if (error) console.error("[Supabase] markNotificationRead:", error.message);
+  } catch (e) {
+    console.error("[Supabase] markNotificationRead exception:", e);
+  }
+}
+
+export async function markAllNotificationsRead(): Promise<void> {
+  if (!supabase) return;
+  try {
+    const { error } = await supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("is_read", false);
+    if (error)
+      console.error("[Supabase] markAllNotificationsRead:", error.message);
+  } catch (e) {
+    console.error("[Supabase] markAllNotificationsRead exception:", e);
+  }
+}
+
+export async function getUnreadCount(): Promise<number> {
+  if (!supabase) return 0;
+  try {
+    const { count, error } = await supabase
+      .from("notifications")
+      .select("id", { count: "exact", head: true })
+      .eq("is_read", false);
+    if (error) {
+      console.error("[Supabase] getUnreadCount:", error.message);
+      return 0;
+    }
+    return count ?? 0;
+  } catch (e) {
+    console.error("[Supabase] getUnreadCount exception:", e);
+    return 0;
+  }
+}
+
+// ─── Ustaad Attendance ────────────────────────────────────────────────────────
+
+export async function getUstaadAttendance(): Promise<UstaadAttendance[]> {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("ustaad_attendance")
+      .select("*")
+      .order("date", { ascending: false });
+    if (error) {
+      console.error("[Supabase] getUstaadAttendance:", error.message);
+      return [];
+    }
+    return (data ?? []).map(rowToUstaadAttendance);
+  } catch (e) {
+    console.error("[Supabase] getUstaadAttendance exception:", e);
+    return [];
+  }
+}
+
+export const loadUstaadAttendance = getUstaadAttendance;
+
+export async function saveUstaadAttendance(
+  records: UstaadAttendance[],
+): Promise<void> {
+  if (!supabase || records.length === 0) return;
+  try {
+    const { error } = await supabase.from("ustaad_attendance").upsert(
+      records.map((r) => ({
+        id: r.id,
+        ustaad_id: r.ustaadId,
+        ustaad_name: r.ustaadName,
+        date: r.date,
+        status: r.status,
+        notes: r.notes ?? "",
+      })),
+    );
+    if (error) console.error("[Supabase] saveUstaadAttendance:", error.message);
+  } catch (e) {
+    console.error("[Supabase] saveUstaadAttendance exception:", e);
+  }
+}
+
+export async function addUstaadAttendanceRecord(
+  record: UstaadAttendance,
+): Promise<void> {
+  if (!supabase) return;
+  try {
+    const { error } = await supabase.from("ustaad_attendance").upsert({
+      id: record.id,
+      ustaad_id: record.ustaadId,
+      ustaad_name: record.ustaadName,
+      date: record.date,
+      status: record.status,
+      notes: record.notes ?? "",
+    });
+    if (error)
+      console.error("[Supabase] addUstaadAttendanceRecord:", error.message);
+  } catch (e) {
+    console.error("[Supabase] addUstaadAttendanceRecord exception:", e);
+  }
+}
+
+export async function getUstaadAttendanceByDate(
+  date: string,
+): Promise<UstaadAttendance[]> {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("ustaad_attendance")
+      .select("*")
+      .eq("date", date);
+    if (error) {
+      console.error("[Supabase] getUstaadAttendanceByDate:", error.message);
+      return [];
+    }
+    return (data ?? []).map(rowToUstaadAttendance);
+  } catch (e) {
+    console.error("[Supabase] getUstaadAttendanceByDate exception:", e);
+    return [];
+  }
+}
+
+// ─── Ustaad Profile ───────────────────────────────────────────────────────────
+
+export async function getUstaadProfile(
+  name: string,
+): Promise<UstaadProfile | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from("ustaad_profiles")
+      .select("*")
+      .eq("name", name)
+      .maybeSingle();
+    if (error) {
+      console.error("[Supabase] getUstaadProfile:", error.message);
+      return null;
+    }
+    return data ? rowToUstaadProfile(data) : null;
+  } catch (e) {
+    console.error("[Supabase] getUstaadProfile exception:", e);
+    return null;
+  }
+}
+
+export async function saveUstaadProfile(profile: UstaadProfile): Promise<void> {
+  if (!supabase) return;
+  try {
+    const { error } = await supabase.from("ustaad_profiles").upsert({
+      id: profile.id,
+      name: profile.name,
+      phone: profile.phone,
+      email: profile.email,
+      bio: profile.bio,
+      time_slot: profile.timeSlot,
+      address: profile.address ?? "",
+      profile_image: profile.profileImage ?? "",
+      created_at: profile.createdAt,
+    });
+    if (error) console.error("[Supabase] saveUstaadProfile:", error.message);
+  } catch (e) {
+    console.error("[Supabase] saveUstaadProfile exception:", e);
+  }
+}
+
+// ─── Parent Profile ───────────────────────────────────────────────────────────
+
+export async function getParentProfileByMobile(
+  mobile: string,
+): Promise<ParentProfile | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from("parent_profiles")
+      .select("*")
+      .eq("mobile", mobile)
+      .maybeSingle();
+    if (error) {
+      console.error("[Supabase] getParentProfileByMobile:", error.message);
+      return null;
+    }
+    return data ? rowToParentProfile(data) : null;
+  } catch (e) {
+    console.error("[Supabase] getParentProfileByMobile exception:", e);
+    return null;
+  }
+}
+
+export async function saveParentProfileRecord(
+  profile: ParentProfile,
+): Promise<void> {
+  if (!supabase) return;
+  try {
+    const { error } = await supabase.from("parent_profiles").upsert({
+      mobile: profile.mobile,
+      name: profile.name,
+      address: profile.address,
+      profile_image: profile.profileImage ?? "",
+      updated_at: profile.updatedAt,
+    });
+    if (error)
+      console.error("[Supabase] saveParentProfileRecord:", error.message);
+  } catch (e) {
+    console.error("[Supabase] saveParentProfileRecord exception:", e);
+  }
+}
+
+// ─── Parent Activity (no longer persisted — session-local only) ───────────────
+
+export function getParentActivity(): ParentActivity[] {
+  return [];
+}
+
+export function updateParentLastLogin(
+  _mobile: string,
+  _studentId: string,
+  _studentName: string,
+): void {
+  // No-op: Parent activity tracking removed from persistent store.
+}
+
+export function addParentActivity(_mobile: string, _action: string): void {
+  // No-op: Parent activity tracking is session-local only.
+}
+
+export function saveParentActivity(_d: ParentActivity[]): void {
+  // No-op
+}
+
+// ─── Backward-compat aliases ──────────────────────────────────────────────────
 
 export const loadTeachers = getTeachers;
 export const loadStudents = getStudents;
 export const loadNotices = getNotices;
 
-// ─── Init Default Settings ────────────────────────────────────────────────────
+// ─── Init (no-op — settings stored locally) ───────────────────────────────────
 
 export function initDefaultSettings(): void {
-  if (!localStorage.getItem(KEYS.appSettings)) {
+  if (!localStorage.getItem("madrasa_app_settings")) {
     saveAppSettings({ ...DEFAULT_SETTINGS });
   }
-  if (!localStorage.getItem(KEYS.adminProfile)) {
+  if (!localStorage.getItem("madrasa_admin_profile")) {
     saveAdminProfile({
       name: "Admin",
       designation: "Principal",
@@ -627,8 +1346,6 @@ export function initDefaultSettings(): void {
     });
   }
 }
-
-// ─── Seed (no-op — all data is added manually by Admin) ──────────────────────
 
 export function seedDemoData(): void {
   // No demo data. System starts empty. Admin adds real data manually.

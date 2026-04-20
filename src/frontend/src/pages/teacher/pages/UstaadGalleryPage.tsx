@@ -33,14 +33,17 @@ export default function UstaadGalleryPage({ teacherName, onBack }: Props) {
   const [newType, setNewType] = useState<"image" | "video">("image");
 
   const loadItems = useCallback(() => {
-    const all = getGallery();
-    const filtered = all.filter(
-      (g) =>
-        !g.uploadedBy ||
-        g.uploadedBy === "Admin" ||
-        g.uploadedBy === teacherName,
-    );
-    setItems(filtered);
+    getGallery()
+      .then((all) => {
+        const filtered = all.filter(
+          (g) =>
+            !g.uploadedBy ||
+            g.uploadedBy === "Admin" ||
+            g.uploadedBy === teacherName,
+        );
+        setItems(filtered);
+      })
+      .catch(() => {});
   }, [teacherName]);
 
   useEffect(() => {
@@ -62,15 +65,19 @@ export default function UstaadGalleryPage({ teacherName, onBack }: Props) {
       uploadedBy: teacherName,
     };
 
-    const all = getGallery();
-    all.push(item);
-    saveGallery(all);
-    toast.success("Item added to gallery");
-    setShowAdd(false);
-    setNewTitle("");
-    setNewUrl("");
-    setNewType("image");
-    loadItems();
+    getGallery()
+      .then((all) => {
+        return saveGallery([...all, item]);
+      })
+      .then(() => {
+        toast.success("Item added to gallery");
+        setShowAdd(false);
+        setNewTitle("");
+        setNewUrl("");
+        setNewType("image");
+        loadItems();
+      })
+      .catch(() => toast.error("Failed to add item"));
   };
 
   const handleRemove = (id: string) => {
@@ -79,10 +86,15 @@ export default function UstaadGalleryPage({ teacherName, onBack }: Props) {
       toast.error("You can only remove your own gallery items");
       return;
     }
-    const all = getGallery().filter((g) => g.id !== id);
-    saveGallery(all);
-    toast.success("Item removed");
-    loadItems();
+    getGallery()
+      .then((all) => {
+        return saveGallery(all.filter((g) => g.id !== id));
+      })
+      .then(() => {
+        toast.success("Item removed");
+        loadItems();
+      })
+      .catch(() => toast.error("Failed to remove item"));
   };
 
   return (

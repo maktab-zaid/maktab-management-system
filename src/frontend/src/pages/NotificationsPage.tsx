@@ -9,7 +9,7 @@ import {
 } from "@/lib/storage";
 import type { AppPage } from "@/types/dashboard";
 import { ArrowLeft, Bell, CheckCheck } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface NotificationsPageProps {
   setActivePage: (page: AppPage) => void;
@@ -18,22 +18,32 @@ interface NotificationsPageProps {
 export default function NotificationsPage({
   setActivePage,
 }: NotificationsPageProps) {
-  const [notifications, setNotifications] = useState<Notification[]>(() =>
-    getNotifications().sort((a, b) => b.date.localeCompare(a.date)),
-  );
+  const [notifications, setNotifications] = useState<Notification[]>([]);
 
-  function handleMarkRead(id: string) {
-    markNotificationRead(id);
-    setNotifications(
-      getNotifications().sort((a, b) => b.date.localeCompare(a.date)),
-    );
+  useEffect(() => {
+    getNotifications()
+      .then((n) =>
+        setNotifications(n.sort((a, b) => b.date.localeCompare(a.date))),
+      )
+      .catch(() => setNotifications([]));
+  }, []);
+
+  async function handleMarkRead(id: string) {
+    await markNotificationRead(id);
+    getNotifications()
+      .then((n) =>
+        setNotifications(n.sort((a, b) => b.date.localeCompare(a.date))),
+      )
+      .catch(() => {});
   }
 
-  function handleMarkAllRead() {
-    markAllNotificationsRead();
-    setNotifications(
-      getNotifications().sort((a, b) => b.date.localeCompare(a.date)),
-    );
+  async function handleMarkAllRead() {
+    await markAllNotificationsRead();
+    getNotifications()
+      .then((n) =>
+        setNotifications(n.sort((a, b) => b.date.localeCompare(a.date))),
+      )
+      .catch(() => {});
   }
 
   const unreadCount = notifications.filter((n) => !n.isRead).length;

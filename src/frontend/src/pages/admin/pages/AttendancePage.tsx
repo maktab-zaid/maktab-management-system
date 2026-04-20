@@ -16,13 +16,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  type Teacher,
+  type UstaadAttendance,
   addUstaadAttendanceRecord,
   getTeachers,
   getUstaadAttendance,
 } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   AttendanceStatus,
@@ -230,23 +232,33 @@ function StudentAttendanceTab() {
 
 function UstaadAttendanceTab() {
   const [date, setDate] = useState(getTodayStr());
-  const teachers = getTeachers();
-  const [records, setRecords] = useState(() => getUstaadAttendance());
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [records, setRecords] = useState<UstaadAttendance[]>([]);
+
+  useEffect(() => {
+    getTeachers()
+      .then(setTeachers)
+      .catch(() => setTeachers([]));
+    getUstaadAttendance()
+      .then(setRecords)
+      .catch(() => setRecords([]));
+  }, []);
 
   const getStatus = (name: string) =>
     records.find((r) => r.ustaadName === name && r.date === date)?.status ??
     null;
 
-  const handleMark = (name: string, status: "present" | "absent") => {
+  const handleMark = async (name: string, status: "present" | "absent") => {
     const id = `ua-${name}-${date}`;
-    addUstaadAttendanceRecord({
+    await addUstaadAttendanceRecord({
       id,
       ustaadId: id,
       ustaadName: name,
       date,
       status,
     });
-    setRecords(getUstaadAttendance());
+    const refreshed = await getUstaadAttendance();
+    setRecords(refreshed);
     toast.success(`${name} marked as ${status}`);
   };
 

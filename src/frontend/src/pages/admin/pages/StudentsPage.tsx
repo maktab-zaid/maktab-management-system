@@ -49,7 +49,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 const CLASS_OPTIONS = [
@@ -81,22 +81,41 @@ const EMPTY_FORM: Omit<Student, "id"> = {
 };
 
 function useLocalStudents() {
-  const [tick, setTick] = useState(0);
-  const refresh = () => setTick((n) => n + 1);
-  const students = getStudents();
-  // force re-render when tick changes
-  void tick;
+  const [students, setStudents] = useState<Student[]>([]);
+  const [, setTick] = useState(0);
+  const refreshRef = useCallback(() => {
+    getStudents()
+      .then(setStudents)
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshRef();
+  }, [refreshRef]);
+
+  const refresh = useCallback(() => {
+    setTick((n) => n + 1);
+    refreshRef();
+  }, [refreshRef]);
+
   return { students, refresh };
 }
 
 export default function StudentsPage() {
   const { students, refresh } = useLocalStudents();
+  const [teacherNames, setTeacherNames] = useState<string[]>([]);
+  useEffect(() => {
+    getTeachers()
+      .then((teachers) => {
+        const fromStorage = teachers.map((t) => t.name);
+        setTeacherNames(fromStorage);
+      })
+      .catch(() => {});
+  }, []);
   const allTeacherNames = useMemo(() => {
-    // Merge names from both storage.getTeachers() and student teacherName fields
-    const fromStorage = getTeachers().map((t) => t.name);
     const fromStudents = students.map((s) => s.teacherName).filter(Boolean);
-    return Array.from(new Set([...fromStorage, ...fromStudents])).sort();
-  }, [students]);
+    return Array.from(new Set([...teacherNames, ...fromStudents])).sort();
+  }, [teacherNames, students]);
 
   const [search, setSearch] = useState("");
   const [classFilter, setClassFilter] = useState("all");
@@ -183,38 +202,54 @@ export default function StudentsPage() {
       return;
     }
     setIsSaving(true);
-    try {
-      const all = getStudents();
-      if (editId) {
-        const updated = all.map((s) =>
-          s.id === editId ? { ...s, ...form } : s,
-        );
-        saveStudents(updated);
-        toast.success("Student updated");
-      } else {
-        const newStudent: Student = {
-          id: `ms-${Date.now()}`,
-          ...form,
-        };
-        saveStudents([...all, newStudent]);
-        toast.success("Student added");
-      }
-      setDialogOpen(false);
-      refresh();
-    } catch {
-      toast.error("Failed to save student");
-    } finally {
-      setIsSaving(false);
-    }
+    getStudents()
+      .then((all) => {
+        if (editId) {
+          const updated = all.map((s) =>
+            s.id === editId ? { ...s, ...form } : s,
+          );
+          saveStudents(updated)
+            .then(() => {
+              toast.success("Student updated");
+              setDialogOpen(false);
+              refresh();
+            })
+            .catch(() => toast.error("Failed to save student"));
+        } else {
+          const newStudent: Student = {
+            id: `ms-${Date.now()}`,
+            ...form,
+          };
+          saveStudents([...all, newStudent])
+            .then(() => {
+              toast.success("Student added");
+              setDialogOpen(false);
+              refresh();
+            })
+            .catch(() => toast.error("Failed to save student"));
+        }
+      })
+      .catch(() => {
+        toast.error("Failed to save student");
+      })
+      .finally(() => {
+        setIsSaving(false);
+      });
   };
 
   const handleDelete = () => {
     if (!deleteId) return;
-    const all = getStudents().filter((s) => s.id !== deleteId);
-    saveStudents(all);
-    toast.success("Student removed");
-    setDeleteId(null);
-    refresh();
+    getStudents()
+      .then((all) => {
+        const updated = all.filter((s) => s.id !== deleteId);
+        return saveStudents(updated);
+      })
+      .then(() => {
+        toast.success("Student removed");
+        setDeleteId(null);
+        refresh();
+      })
+      .catch(() => toast.error("Failed to remove student"));
   };
 
   const slotLabel = (slot?: string) => {

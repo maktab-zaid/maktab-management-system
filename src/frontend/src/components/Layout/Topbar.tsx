@@ -1,4 +1,5 @@
 import {
+  type Notification,
   type Session,
   getNotifications,
   getUnreadCount,
@@ -6,7 +7,7 @@ import {
 } from "@/lib/storage";
 import type { AppPage } from "@/types/dashboard";
 import { Bell, ChevronDown, LogOut, Settings, User } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const PAGE_TITLES: Record<AppPage, string> = {
   dashboard: "Dashboard",
@@ -97,23 +98,34 @@ export function Topbar({
 }: TopbarProps) {
   const [profileOpen, setProfileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
-  const [notifList, setNotifList] = useState(() =>
-    getNotifications().slice(0, 5),
-  );
+  const [notifList, setNotifList] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    getNotifications()
+      .then((n) => setNotifList(n.slice(0, 5)))
+      .catch(() => setNotifList([]));
+    getUnreadCount()
+      .then(setUnreadCount)
+      .catch(() => setUnreadCount(0));
+  }, []);
 
   const role = session?.role ?? "admin";
   const roleBadge = ROLE_BADGE[role];
-  const unreadCount = getUnreadCount();
 
-  function handleNotifOpen() {
-    setNotifList(getNotifications().slice(0, 5));
+  async function handleNotifOpen() {
+    const n = await getNotifications().catch(() => []);
+    setNotifList(n.slice(0, 5));
     setNotifOpen((v) => !v);
     setProfileOpen(false);
   }
 
-  function handleNotifClick(id: string) {
-    markNotificationRead(id);
-    setNotifList(getNotifications().slice(0, 5));
+  async function handleNotifClick(id: string) {
+    await markNotificationRead(id).catch(() => {});
+    const n = await getNotifications().catch(() => []);
+    setNotifList(n.slice(0, 5));
+    const count = await getUnreadCount().catch(() => 0);
+    setUnreadCount(count);
   }
 
   function handleViewAll() {

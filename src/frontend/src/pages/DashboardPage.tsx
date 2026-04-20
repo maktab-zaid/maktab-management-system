@@ -2,8 +2,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
 import {
+  type ActivityLog,
+  type AttendanceRecord,
+  type FeeRecord,
+  type Notice,
+  type SabakRecord,
   type Session,
-  addParentActivity,
+  type Student,
   getActivityLog,
   getAttendance,
   getFees,
@@ -95,20 +100,21 @@ const QUICK_ACTIONS = [
 
 /* ── Time Slot Student Count Cards ──────────────────────────────────────── */
 function TimeSlotStats() {
-  const students = useMemo(() => getStudents(), []);
-  const teachersList = useMemo(() => {
-    try {
-      const raw = localStorage.getItem("madrasa_teachers");
-      return raw
-        ? (JSON.parse(raw) as Array<{
-            name: string;
-            timeSlot?: string | string[];
-            shifts?: string[];
-          }>)
-        : [];
-    } catch {
-      return [];
-    }
+  const [students, setStudents] = useState<Array<{ timeSlot?: string }>>([]);
+  const [teachersList, setTeachersList] = useState<
+    Array<{ name: string; timeSlot?: string | string[]; shifts?: string[] }>
+  >([]);
+
+  useEffect(() => {
+    getStudents()
+      .then(setStudents)
+      .catch(() => setStudents([]));
+    // Teachers imported from Supabase via storage
+    import("@/lib/storage").then(({ getTeachers }) =>
+      getTeachers()
+        .then(setTeachersList)
+        .catch(() => setTeachersList([])),
+    );
   }, []);
 
   const morningCount = students.filter(
@@ -231,7 +237,15 @@ function TimeSlotStats() {
 
 /* ── Class Analytics ─────────────────────────────────────────────────────── */
 function ClassAnalytics() {
-  const students = useMemo(() => getStudents(), []);
+  const [students, setStudents] = useState<Array<{ studentClass?: string }>>(
+    [],
+  );
+
+  useEffect(() => {
+    getStudents()
+      .then(setStudents)
+      .catch(() => setStudents([]));
+  }, []);
 
   const classCounts = useMemo(() => {
     return STUDENT_CLASS_OPTIONS.map((cls) => ({
@@ -293,17 +307,34 @@ function ParentDashboard({
   session: Session;
   onNavigate: (page: AppPage) => void;
 }) {
-  const students = getStudents();
-  const child = students.find((s) => s.parentMobile === session.mobile);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
+  const [allSabak, setAllSabak] = useState<SabakRecord[]>([]);
+  const [notices, setNotices] = useState<Notice[]>([]);
   const [shiftFilter, setShiftFilter] = useState<string>("all");
 
   useEffect(() => {
-    if (session.mobile) {
-      addParentActivity(session.mobile, "Viewed dashboard");
-    }
-  }, [session.mobile]);
+    getStudents()
+      .then(setStudents)
+      .catch(() => setStudents([]));
+    getAttendance()
+      .then(setAttendance)
+      .catch(() => setAttendance([]));
+    getSabak()
+      .then(setAllSabak)
+      .catch(() => setAllSabak([]));
+    getNotices()
+      .then((n) =>
+        setNotices(
+          n.sort(
+            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+          ),
+        ),
+      )
+      .catch(() => setNotices([]));
+  }, []);
 
-  const attendance = getAttendance();
+  const child = students.find((s) => s.parentMobile === session.mobile);
   const childAttendance = child
     ? attendance.filter((a) => a.studentId === child.id)
     : [];
@@ -316,39 +347,13 @@ function ParentDashboard({
       ? Math.round((presentCount / totalAttendance) * 100)
       : null;
 
-  const allSabak = getSabak();
   const childSabak = child
     ? allSabak
         .filter((s) => s.studentId === child.id)
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
     : null;
 
-  const noticesList = [] as Array<{
-    id: string;
-    title: string;
-    message: string;
-    date: string;
-    createdBy: string;
-  }>;
-  try {
-    const stored = localStorage.getItem("madrasa_notices");
-    if (stored) {
-      const parsed = JSON.parse(stored) as Array<{
-        id: string;
-        title: string;
-        message: string;
-        date: string;
-        createdBy: string;
-      }>;
-      parsed.sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-      );
-      noticesList.push(...parsed);
-    }
-  } catch {
-    // fallback
-  }
-  const latestNotice = noticesList[0] ?? null;
+  const latestNotice = notices[0] ?? null;
 
   const todayDate = new Date().toLocaleDateString("en-IN", {
     weekday: "long",
@@ -726,7 +731,13 @@ function ParentDashboard({
 
 /* ── Live Recent Activity (reads from ActivityLog) ──────────────────────── */
 function LiveRecentActivity() {
-  const logs = useMemo(() => getActivityLog().slice(0, 5), []);
+  const [logs, setLogs] = useState<ActivityLog[]>([]);
+
+  useEffect(() => {
+    getActivityLog()
+      .then((all) => setLogs(all.slice(0, 5)))
+      .catch(() => setLogs([]));
+  }, []);
 
   if (logs.length === 0) {
     return (
@@ -795,9 +806,21 @@ function LiveRecentActivity() {
 
 /* ── Monthly Summary WhatsApp Button ────────────────────────────────────── */
 function MonthlySummaryButton() {
-  const students = useMemo(() => getStudents(), []);
-  const fees = useMemo(() => getFees(), []);
-  const attendance = useMemo(() => getAttendance(), []);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [fees, setFees] = useState<FeeRecord[]>([]);
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
+
+  useEffect(() => {
+    getStudents()
+      .then(setStudents)
+      .catch(() => setStudents([]));
+    getFees()
+      .then(setFees)
+      .catch(() => setFees([]));
+    getAttendance()
+      .then(setAttendance)
+      .catch(() => setAttendance([]));
+  }, []);
 
   const totalStudents = students.length;
   const feesCollected = fees
@@ -881,7 +904,22 @@ function TeacherDashboard({
         ? [session.teacherTimeSlot.toLowerCase()]
         : [];
 
-  const allStudents = useMemo(() => getStudents(), []);
+  const [allStudents, setAllStudents] = useState<Student[]>([]);
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
+  const [fees, setFees] = useState<FeeRecord[]>([]);
+
+  useEffect(() => {
+    getStudents()
+      .then(setAllStudents)
+      .catch(() => setAllStudents([]));
+    getAttendance()
+      .then(setAttendance)
+      .catch(() => setAttendance([]));
+    getFees()
+      .then(setFees)
+      .catch(() => setFees([]));
+  }, []);
+
   const myStudents = useMemo(
     () =>
       assignedSessions.length > 0
@@ -896,9 +934,6 @@ function TeacherDashboard({
     () => new Set(myStudents.map((s) => s.id)),
     [myStudents],
   );
-
-  const attendance = useMemo(() => getAttendance(), []);
-  const fees = useMemo(() => getFees(), []);
 
   const myAttendance = useMemo(
     () => attendance.filter((a) => myStudentIds.has(a.studentId)),
@@ -1166,7 +1201,25 @@ export default function DashboardPage({
   onNavigate,
   session,
 }: DashboardPageProps) {
-  const liveNotices = useMemo(() => getNotices().slice(0, 3), []);
+  const [liveNotices, setLiveNotices] = useState<Notice[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
+  const [fees, setFees] = useState<FeeRecord[]>([]);
+
+  useEffect(() => {
+    getNotices()
+      .then((n) => setLiveNotices(n.slice(0, 3)))
+      .catch(() => setLiveNotices([]));
+    getStudents()
+      .then(setStudents)
+      .catch(() => setStudents([]));
+    getAttendance()
+      .then(setAttendance)
+      .catch(() => setAttendance([]));
+    getFees()
+      .then(setFees)
+      .catch(() => setFees([]));
+  }, []);
 
   if (session?.role === "parent") {
     return <ParentDashboard session={session} onNavigate={onNavigate} />;
@@ -1177,10 +1230,6 @@ export default function DashboardPage({
   }
 
   // Admin dashboard — all stats computed from real data
-  const students = getStudents();
-  const attendance = getAttendance();
-  const fees = getFees();
-
   const totalStudents = students.length;
   const presentCount = attendance.filter((a) => a.status === "present").length;
   const totalAttendance = attendance.length;

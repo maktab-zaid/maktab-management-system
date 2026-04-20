@@ -14,7 +14,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { loginAsAdmin, loginAsParent, loginAsTeacher } from "../../lib/auth";
-import { type Session, getTeachers } from "../../lib/storage";
+import { type Session, type Teacher, getTeachers } from "../../lib/storage";
 
 interface LoginPageProps {
   onLogin: (session: Session) => void;
@@ -54,9 +54,20 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(
     null,
   );
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [loadingTeachers, setLoadingTeachers] = useState(false);
+  const [loggingIn, setLoggingIn] = useState(false);
 
-  const teachers = getTeachers();
-  // Deduplicate by name for login dropdown — show each teacher once
+  // Load teachers from Supabase on mount
+  useEffect(() => {
+    setLoadingTeachers(true);
+    getTeachers()
+      .then((data) => setTeachers(data))
+      .catch(() => setTeachers([]))
+      .finally(() => setLoadingTeachers(false));
+  }, []);
+
+  // Deduplicate by name for login dropdown
   const uniqueTeachers = teachers.filter(
     (t, idx) => teachers.findIndex((x) => x.name === t.name) === idx,
   );
@@ -94,39 +105,52 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     onLogin(session);
   };
 
-  const handleTeacherSubmit = (e: React.FormEvent) => {
+  const handleTeacherSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setTeacherLoginError(null);
     if (!teacherName) {
       toast.error("Please select your name");
       return;
     }
-
-    const session = loginAsTeacher(teacherName);
-    if (!session) {
-      setTeacherLoginError(
-        "Ustaad not found. Please contact Admin to be added to the system.",
-      );
-      return;
+    setLoggingIn(true);
+    try {
+      const session = await loginAsTeacher(teacherName);
+      if (!session) {
+        setTeacherLoginError(
+          "Ustaad not found. Please contact Admin to be added to the system.",
+        );
+        return;
+      }
+      onLogin(session);
+    } catch {
+      setTeacherLoginError("Login failed. Please try again.");
+    } finally {
+      setLoggingIn(false);
     }
-    onLogin(session);
   };
 
-  const handleParentSubmit = (e: React.FormEvent) => {
+  const handleParentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setParentLoginError(null);
     if (parentMobile.length !== 10) {
       toast.error("Please enter a valid 10-digit mobile number");
       return;
     }
-    const session = loginAsParent(parentMobile);
-    if (!session) {
-      setParentLoginError(
-        "Login Failed. Mobile number not found in student records.",
-      );
-      return;
+    setLoggingIn(true);
+    try {
+      const session = await loginAsParent(parentMobile);
+      if (!session) {
+        setParentLoginError(
+          "Login Failed. Mobile number not found in student records.",
+        );
+        return;
+      }
+      onLogin(session);
+    } catch {
+      setParentLoginError("Login failed. Please try again.");
+    } finally {
+      setLoggingIn(false);
     }
-    onLogin(session);
   };
 
   const handleInstall = async () => {
@@ -301,7 +325,14 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                     >
                       Select Your Name
                     </Label>
-                    {uniqueTeachers.length === 0 ? (
+                    {loadingTeachers ? (
+                      <div className="flex items-center gap-2 rounded-lg bg-muted/50 border border-border px-3 py-3">
+                        <GraduationCap className="w-4 h-4 text-muted-foreground shrink-0 animate-pulse" />
+                        <p className="text-sm text-muted-foreground">
+                          Loading Ustaad list...
+                        </p>
+                      </div>
+                    ) : uniqueTeachers.length === 0 ? (
                       <div className="flex items-center gap-2 rounded-lg bg-muted/50 border border-border px-3 py-3">
                         <GraduationCap className="w-4 h-4 text-muted-foreground shrink-0" />
                         <p className="text-sm text-muted-foreground">
@@ -344,7 +375,6 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                     )}
                   </div>
 
-                  {/* Show all assigned shifts for selected teacher */}
                   {teacherName && selectedTeacherShifts.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 px-1">
                       <span className="text-xs text-muted-foreground">
@@ -377,10 +407,10 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   <Button
                     data-ocid="login.teacher.submit_button"
                     type="submit"
-                    disabled={uniqueTeachers.length === 0}
+                    disabled={uniqueTeachers.length === 0 || loggingIn}
                     className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold h-11 disabled:opacity-50"
                   >
-                    Login as Ustaad
+                    {loggingIn ? "Logging in..." : "Login as Ustaad"}
                   </Button>
                 </motion.form>
               )}
@@ -446,15 +476,15 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   <Button
                     data-ocid="login.parent.submit_button"
                     type="submit"
-                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold h-11"
+                    disabled={loggingIn}
+                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold h-11 disabled:opacity-50"
                   >
-                    View My Child's Progress
+                    {loggingIn ? "Checking..." : "View My Child's Progress"}
                   </Button>
                 </motion.form>
               )}
             </AnimatePresence>
 
-            {/* Error display is handled via sonner toasts */}
             <div
               data-ocid="login.error_state"
               aria-live="polite"

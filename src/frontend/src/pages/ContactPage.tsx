@@ -3,12 +3,11 @@ import {
   type Session,
   type Student,
   type Teacher,
-  addParentActivity,
   getStudents,
   getTeachers,
 } from "@/lib/storage";
 import { MessageCircle, Phone, Users } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 interface ContactPageProps {
   session: Session;
@@ -97,7 +96,7 @@ function ParentContactView({
   // Track activity once on mount
   useEffect(() => {
     if (session.mobile) {
-      addParentActivity(session.mobile, "Contacted teacher");
+      // addParentActivity no longer needed — parent activity is not stored
     }
   }, [session.mobile]);
 
@@ -166,8 +165,17 @@ function ParentContactView({
 // ── Main Component ───────────────────────────────────────────────────────────
 
 export default function ContactPage({ session }: ContactPageProps) {
-  const teachers = getTeachers();
-  const students = getStudents();
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+
+  useEffect(() => {
+    getTeachers()
+      .then(setTeachers)
+      .catch(() => setTeachers([]));
+    getStudents()
+      .then(setStudents)
+      .catch(() => setStudents([]));
+  }, []);
 
   // ── PARENT VIEW ────────────────────────────────────────────────────────────
   if (session.role === "parent") {

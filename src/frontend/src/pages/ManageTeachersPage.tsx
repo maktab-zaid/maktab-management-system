@@ -20,7 +20,6 @@ import {
   type SalaryRecord,
   type Teacher,
   createId,
-  getParentActivity,
   getSalaries,
   getTeachers,
   saveSalaries,
@@ -38,7 +37,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const MONTHS = [
   "January",
@@ -107,9 +106,19 @@ function SectionHeader({
 // ── Main Page ────────────────────────────────────────────────────────────────
 
 export default function ManageTeachersPage() {
-  const [teachers, setTeachers] = useState<Teacher[]>(() => getTeachers());
-  const [salaries, setSalaries] = useState<SalaryRecord[]>(() => getSalaries());
-  const parentActivity: ParentActivity[] = getParentActivity();
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [salaries, setSalaries] = useState<SalaryRecord[]>([]);
+  const parentActivity: ParentActivity[] = [];
+
+  // Load from Supabase on mount
+  useEffect(() => {
+    getTeachers()
+      .then(setTeachers)
+      .catch(() => setTeachers([]));
+    getSalaries()
+      .then(setSalaries)
+      .catch(() => setSalaries([]));
+  }, []);
 
   // Teacher modals
   const [addTeacherOpen, setAddTeacherOpen] = useState(false);
@@ -142,7 +151,7 @@ export default function ManageTeachersPage() {
 
   // ── Teacher handlers ────────────────────────────────────────────────────────
 
-  const handleAddTeacher = () => {
+  const handleAddTeacher = async () => {
     if (!newTeacher.name.trim() || !newTeacher.timeSlot) return;
     const teacher: Teacher = {
       id: createId(),
@@ -155,13 +164,13 @@ export default function ManageTeachersPage() {
         | "evening",
     };
     const updated = [...teachers, teacher];
-    saveTeachers(updated);
+    await saveTeachers(updated);
     setTeachers(updated);
     setNewTeacher({ name: "", mobile: "", timeSlot: "" });
     setAddTeacherOpen(false);
   };
 
-  const handleEditClass = () => {
+  const handleEditClass = async () => {
     if (!editClassTeacher || !editTimeSlot) return;
     const updated = teachers.map((t) =>
       t.id === editClassTeacher.id
@@ -175,23 +184,23 @@ export default function ManageTeachersPage() {
           }
         : t,
     );
-    saveTeachers(updated);
+    await saveTeachers(updated);
     setTeachers(updated);
     setEditClassTeacher(null);
     setEditTimeSlot("");
   };
 
-  const handleDeleteTeacher = () => {
+  const handleDeleteTeacher = async () => {
     if (!deleteTeacher) return;
     const updated = teachers.filter((t) => t.id !== deleteTeacher.id);
-    saveTeachers(updated);
+    await saveTeachers(updated);
     setTeachers(updated);
     setDeleteTeacher(null);
   };
 
   // ── Salary handlers ─────────────────────────────────────────────────────────
 
-  const handleAddSalary = () => {
+  const handleAddSalary = async () => {
     if (!newSalary.teacherName || !newSalary.amount) return;
     const record: SalaryRecord = {
       id: createId(),
@@ -205,7 +214,7 @@ export default function ManageTeachersPage() {
       status: "pending",
     };
     const updated = [...salaries, record];
-    saveSalaries(updated);
+    await saveSalaries(updated);
     setSalaries(updated);
     setNewSalary({
       teacherName: "",
@@ -216,7 +225,7 @@ export default function ManageTeachersPage() {
     setAddSalaryOpen(false);
   };
 
-  const handleMarkPaid = (record: SalaryRecord) => {
+  const handleMarkPaid = async (record: SalaryRecord) => {
     const updated = salaries.map((s) =>
       s.id === record.id
         ? {
@@ -226,7 +235,7 @@ export default function ManageTeachersPage() {
           }
         : s,
     );
-    saveSalaries(updated);
+    await saveSalaries(updated);
     setSalaries(updated);
     setWhatsappSalary({
       ...record,

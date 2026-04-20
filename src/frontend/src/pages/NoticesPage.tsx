@@ -24,7 +24,6 @@ import { toast } from "sonner";
 import {
   type Notice,
   type Session,
-  addParentActivity,
   createId,
   getNotices,
   saveNotices,
@@ -58,28 +57,29 @@ function buildWhatsAppText(notice: Notice): string {
 
 export default function NoticesPage({ session }: NoticesPageProps) {
   const isAdmin = session.role === "admin";
-  const isParent = session.role === "parent";
 
-  const [notices, setNotices] = useState<Notice[]>(() =>
-    [...getNotices()].sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-    ),
-  );
+  const [notices, setNotices] = useState<Notice[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Notice | null>(null);
   const [form, setForm] = useState<CreateForm>(EMPTY_FORM);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Track parent activity on mount
+  // Load notices from Supabase on mount
   useEffect(() => {
-    if (isParent && session.mobile) {
-      addParentActivity(session.mobile, "Viewed notices");
-    }
-  }, [isParent, session.mobile]);
+    getNotices()
+      .then((n) =>
+        setNotices(
+          [...n].sort(
+            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+          ),
+        ),
+      )
+      .catch(() => setNotices([]));
+  }, []);
 
   // ── CRUD ────────────────────────────────────────────────────────────────────
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!form.title.trim() || !form.message.trim()) return;
     const next: Notice = {
       id: createId(),
@@ -90,16 +90,16 @@ export default function NoticesPage({ session }: NoticesPageProps) {
     };
     const updated = [next, ...notices];
     setNotices(updated);
-    saveNotices(updated);
+    await saveNotices(updated);
     setForm(EMPTY_FORM);
     setShowCreate(false);
     toast.success("Notice published successfully.");
   };
 
-  const handleDelete = (notice: Notice) => {
+  const handleDelete = async (notice: Notice) => {
     const updated = notices.filter((n) => n.id !== notice.id);
     setNotices(updated);
-    saveNotices(updated);
+    await saveNotices(updated);
     setDeleteTarget(null);
     toast.success(`"${notice.title}" deleted.`);
   };

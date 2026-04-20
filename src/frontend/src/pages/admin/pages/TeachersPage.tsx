@@ -51,7 +51,7 @@ import {
   Trash2,
   UserCheck,
 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   useAddTeacher,
@@ -131,11 +131,17 @@ export default function TeachersPage() {
   const [formData, setFormData] = useState<TeacherFormData>(EMPTY_FORM);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [logExpanded, setLogExpanded] = useState(false);
-  const [logTick, setLogTick] = useState(0);
+  const [activityLog, setActivityLog] = useState<ActivityLog[]>([]);
 
-  // Activity log is loaded from storage directly
-  void logTick;
-  const activityLog = getActivityLog().slice(0, 20);
+  const refreshLog = useCallback(() => {
+    getActivityLog()
+      .then((logs) => setActivityLog(logs.slice(0, 20)))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshLog();
+  }, [refreshLog]);
 
   const filtered = teachers.filter((t) => {
     const matchSearch =
@@ -393,7 +399,7 @@ export default function TeachersPage() {
           data-ocid="admin.teachers.activity_log.toggle"
           onClick={() => {
             setLogExpanded((v) => !v);
-            setLogTick((n) => n + 1);
+            refreshLog();
           }}
           className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors text-left"
         >

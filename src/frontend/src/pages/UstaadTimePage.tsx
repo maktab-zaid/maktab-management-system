@@ -2,7 +2,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
+  type AttendanceRecord,
+  type FeeRecord,
+  type SabakRecord,
   type Session,
+  type Student,
   getAttendance,
   getFees,
   getSabak,
@@ -10,7 +14,7 @@ import {
 } from "@/lib/storage";
 import type { AppPage } from "@/types/dashboard";
 import { ArrowLeft, BookOpen, CalendarCheck, IndianRupee } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 interface UstaadTimePageProps {
   timeSlot: "morning" | "afternoon" | "evening";
@@ -23,10 +27,25 @@ export default function UstaadTimePage({
   setActivePage,
   session,
 }: UstaadTimePageProps) {
-  const allStudents = getStudents();
-  const allAttendance = getAttendance();
-  const allFees = getFees();
-  const allSabak = getSabak();
+  const [allStudents, setAllStudents] = useState<Student[]>([]);
+  const [allAttendance, setAllAttendance] = useState<AttendanceRecord[]>([]);
+  const [allFees, setAllFees] = useState<FeeRecord[]>([]);
+  const [allSabak, setAllSabak] = useState<SabakRecord[]>([]);
+
+  useEffect(() => {
+    getStudents()
+      .then(setAllStudents)
+      .catch(() => setAllStudents([]));
+    getAttendance()
+      .then(setAllAttendance)
+      .catch(() => setAllAttendance([]));
+    getFees()
+      .then(setAllFees)
+      .catch(() => setAllFees([]));
+    getSabak()
+      .then(setAllSabak)
+      .catch(() => setAllSabak([]));
+  }, []);
 
   const today = new Date().toISOString().slice(0, 10);
 

@@ -23,60 +23,60 @@ const TYPE_COLORS: Record<string, string> = {
   success: "bg-success/10 border-success/20 text-success-foreground",
 };
 
-function seedSampleNotifications(): void {
-  const existing = getNotifications().filter(
-    (n) => n.forRole === "ustaad" || n.forRole === "all",
-  );
-  if (existing.length > 0) return;
+function seedSampleNotifications(): Promise<void> {
+  return getNotifications().then((existing) => {
+    const filtered = existing.filter(
+      (n) => n.forRole === "ustaad" || n.forRole === "all",
+    );
+    if (filtered.length > 0) return;
 
-  const samples: Notification[] = [
-    {
-      id: createId(),
-      title: "Fee Collection Reminder",
-      message:
-        "Fee collection is due this week. Please remind students and update fee status in the system.",
-      type: "warning",
-      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-      date: new Date(Date.now() - 2 * 60 * 60 * 1000)
-        .toISOString()
-        .slice(0, 10),
-      read: false,
-      isRead: false,
-      forRole: "ustaad",
-    },
-    {
-      id: createId(),
-      title: "Attendance Reminder",
-      message:
-        "Attendance sync reminder: Please ensure daily attendance is marked before Evening session.",
-      type: "info",
-      timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-      date: new Date(Date.now() - 24 * 60 * 60 * 1000)
-        .toISOString()
-        .slice(0, 10),
-      read: false,
-      isRead: false,
-      forRole: "ustaad",
-    },
-    {
-      id: createId(),
-      title: "Parent-Teacher Meeting",
-      message:
-        "Parent-Teacher Meeting is scheduled for Saturday. Please prepare student progress reports.",
-      type: "info",
-      timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-      date: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)
-        .toISOString()
-        .slice(0, 10),
-      read: true,
-      isRead: true,
-      forRole: "all",
-    },
-  ];
+    const samples: Notification[] = [
+      {
+        id: createId(),
+        title: "Fee Collection Reminder",
+        message:
+          "Fee collection is due this week. Please remind students and update fee status in the system.",
+        type: "warning",
+        timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+        date: new Date(Date.now() - 2 * 60 * 60 * 1000)
+          .toISOString()
+          .slice(0, 10),
+        read: false,
+        isRead: false,
+        forRole: "ustaad",
+      },
+      {
+        id: createId(),
+        title: "Attendance Reminder",
+        message:
+          "Attendance sync reminder: Please ensure daily attendance is marked before Evening session.",
+        type: "info",
+        timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+        date: new Date(Date.now() - 24 * 60 * 60 * 1000)
+          .toISOString()
+          .slice(0, 10),
+        read: false,
+        isRead: false,
+        forRole: "ustaad",
+      },
+      {
+        id: createId(),
+        title: "Parent-Teacher Meeting",
+        message:
+          "Parent-Teacher Meeting is scheduled for Saturday. Please prepare student progress reports.",
+        type: "info",
+        timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+        date: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)
+          .toISOString()
+          .slice(0, 10),
+        read: true,
+        isRead: true,
+        forRole: "all",
+      },
+    ];
 
-  for (const n of samples) {
-    saveNotification(n);
-  }
+    return Promise.all(samples.map((n) => saveNotification(n))).then(() => {});
+  });
 }
 
 function formatRelativeTime(iso: string): string {
@@ -97,12 +97,21 @@ export default function UstaadNotificationsPage({
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
   const loadNotifications = useCallback(() => {
-    seedSampleNotifications();
-    const all = getNotifications().filter(
-      (n) => n.forRole === "ustaad" || n.forRole === "all",
-    );
-    setNotifications(all);
-    onUnreadChange?.(getUnreadCount());
+    seedSampleNotifications()
+      .then(() => {
+        return getNotifications();
+      })
+      .then((all) => {
+        const filtered = all.filter(
+          (n) => n.forRole === "ustaad" || n.forRole === "all",
+        );
+        setNotifications(filtered);
+        return getUnreadCount();
+      })
+      .then((count) => {
+        onUnreadChange?.(count);
+      })
+      .catch(() => {});
   }, [onUnreadChange]);
 
   useEffect(() => {
@@ -110,15 +119,19 @@ export default function UstaadNotificationsPage({
   }, [loadNotifications]);
 
   const handleMarkRead = (id: string) => {
-    markNotificationRead(id);
-    loadNotifications();
+    markNotificationRead(id)
+      .then(() => loadNotifications())
+      .catch(() => {});
   };
 
   const handleMarkAllRead = () => {
-    for (const n of notifications.filter((n) => !n.read)) {
-      markNotificationRead(n.id);
-    }
-    loadNotifications();
+    Promise.all(
+      notifications
+        .filter((n) => !n.read)
+        .map((n) => markNotificationRead(n.id)),
+    )
+      .then(() => loadNotifications())
+      .catch(() => {});
   };
 
   const unread = notifications.filter((n) => !n.read).length;

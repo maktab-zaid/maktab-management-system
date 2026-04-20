@@ -8,6 +8,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  type AttendanceRecord,
+  type FeeRecord,
+  type SabakRecord,
+  type Student,
+  type Teacher,
   getAttendance,
   getFees,
   getSabak,
@@ -25,7 +30,7 @@ import {
   Printer,
   Star,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AttendanceStatus,
   useAcademicRecord,
@@ -114,11 +119,20 @@ function StarRow({ value }: { value: number }) {
 // ─── Report 1: Student List ───────────────────────────────────────────────────
 
 function StudentListReportCard() {
-  const localTeachers = getTeachers();
+  const [localTeachers, setLocalTeachers] = useState<Teacher[]>([]);
+  const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [shift, setShift] = useState("all");
   const [ustaad, setUstaad] = useState("all");
 
-  const allStudents = getStudents();
+  useEffect(() => {
+    getTeachers()
+      .then(setLocalTeachers)
+      .catch(() => setLocalTeachers([]));
+    getStudents()
+      .then(setAllStudents)
+      .catch(() => setAllStudents([]));
+  }, []);
+
   const filtered = allStudents.filter((s) => {
     const shiftMatch = shift === "all" || s.timeSlot === shift;
     const ustaadMatch = ustaad === "all" || s.teacherName === ustaad;
@@ -249,9 +263,17 @@ function FeesReportCard() {
   const [shift, setShift] = useState("all");
   const [status, setStatus] = useState("all");
   const [month, setMonth] = useState(MONTHS[new Date().getMonth()]);
+  const [allStudents, setAllStudents] = useState<Student[]>([]);
+  const [allFees, setAllFees] = useState<FeeRecord[]>([]);
 
-  const allStudents = getStudents();
-  const allFees = getFees();
+  useEffect(() => {
+    getStudents()
+      .then(setAllStudents)
+      .catch(() => setAllStudents([]));
+    getFees()
+      .then(setAllFees)
+      .catch(() => setAllFees([]));
+  }, []);
 
   const filteredStudents = allStudents.filter(
     (s) => shift === "all" || s.timeSlot === shift,
@@ -434,13 +456,24 @@ function FeesReportCard() {
 // ─── Report 3: Attendance Report ──────────────────────────────────────────────
 
 function AttendanceReportCard() {
-  const localTeachers = getTeachers();
+  const [localTeachers, setLocalTeachers] = useState<Teacher[]>([]);
   const [shift, setShift] = useState("all");
   const [ustaad, setUstaad] = useState("all");
   const [month, setMonth] = useState(MONTHS[new Date().getMonth()]);
+  const [allStudents, setAllStudents] = useState<Student[]>([]);
+  const [allAttendance, setAllAttendance] = useState<AttendanceRecord[]>([]);
 
-  const allStudents = getStudents();
-  const allAttendance = getAttendance();
+  useEffect(() => {
+    getTeachers()
+      .then(setLocalTeachers)
+      .catch(() => setLocalTeachers([]));
+    getStudents()
+      .then(setAllStudents)
+      .catch(() => setAllStudents([]));
+    getAttendance()
+      .then(setAllAttendance)
+      .catch(() => setAllAttendance([]));
+  }, []);
 
   const filtered = allStudents.filter((s) => {
     const shiftMatch = shift === "all" || s.timeSlot === shift;
@@ -623,12 +656,23 @@ function AttendanceReportCard() {
 // ─── Report 4: Sabak Progress Report ─────────────────────────────────────────
 
 function SabakProgressReportCard() {
-  const localTeachers = getTeachers();
+  const [localTeachers, setLocalTeachers] = useState<Teacher[]>([]);
   const [shift, setShift] = useState("all");
   const [ustaad, setUstaad] = useState("all");
+  const [allStudents, setAllStudents] = useState<Student[]>([]);
+  const [allSabak, setAllSabak] = useState<SabakRecord[]>([]);
 
-  const allStudents = getStudents();
-  const allSabak = getSabak();
+  useEffect(() => {
+    getTeachers()
+      .then(setLocalTeachers)
+      .catch(() => setLocalTeachers([]));
+    getStudents()
+      .then(setAllStudents)
+      .catch(() => setAllStudents([]));
+    getSabak()
+      .then(setAllSabak)
+      .catch(() => setAllSabak([]));
+  }, []);
 
   const filtered = allStudents.filter((s) => {
     const shiftMatch = shift === "all" || s.timeSlot === shift;
@@ -782,13 +826,31 @@ function ClassReportSection() {
     MONTHS[new Date().getMonth()],
   );
   const printRef = useRef<HTMLDivElement>(null);
+  const [allStudentsRaw, setAllStudentsRaw] = useState<Student[]>([]);
+  const [localAttendance, setLocalAttendance] = useState<AttendanceRecord[]>(
+    [],
+  );
+  const [localFees, setLocalFees] = useState<FeeRecord[]>([]);
+  const [localSabak, setLocalSabak] = useState<SabakRecord[]>([]);
 
-  const localStudents = getStudents().filter(
+  useEffect(() => {
+    getStudents()
+      .then(setAllStudentsRaw)
+      .catch(() => setAllStudentsRaw([]));
+    getAttendance()
+      .then(setLocalAttendance)
+      .catch(() => setLocalAttendance([]));
+    getFees()
+      .then(setLocalFees)
+      .catch(() => setLocalFees([]));
+    getSabak()
+      .then(setLocalSabak)
+      .catch(() => setLocalSabak([]));
+  }, []);
+
+  const localStudents = allStudentsRaw.filter(
     (s) => s.className === selectedClass,
   );
-  const localAttendance = getAttendance();
-  const localFees = getFees();
-  const localSabak = getSabak();
 
   const handlePrint = () => {
     if (!selectedClass) return;
@@ -938,19 +1000,40 @@ function ClassReportSection() {
 // ─── Per-Ustaad PDF Report (existing) ────────────────────────────────────────
 
 function UstaadReportSection() {
-  const localTeachers = getTeachers();
+  const [localTeachers, setLocalTeachers] = useState<Teacher[]>([]);
   const [selectedUstaad, setSelectedUstaad] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(
     MONTHS[new Date().getMonth()],
   );
   const printRef = useRef<HTMLDivElement>(null);
+  const [allStudentsRaw2, setAllStudentsRaw2] = useState<Student[]>([]);
+  const [localAttendance, setLocalAttendance] = useState<AttendanceRecord[]>(
+    [],
+  );
+  const [localFees, setLocalFees] = useState<FeeRecord[]>([]);
+  const [localSabak, setLocalSabak] = useState<SabakRecord[]>([]);
 
-  const localStudents = getStudents().filter(
+  useEffect(() => {
+    getTeachers()
+      .then(setLocalTeachers)
+      .catch(() => setLocalTeachers([]));
+    getStudents()
+      .then(setAllStudentsRaw2)
+      .catch(() => setAllStudentsRaw2([]));
+    getAttendance()
+      .then(setLocalAttendance)
+      .catch(() => setLocalAttendance([]));
+    getFees()
+      .then(setLocalFees)
+      .catch(() => setLocalFees([]));
+    getSabak()
+      .then(setLocalSabak)
+      .catch(() => setLocalSabak([]));
+  }, []);
+
+  const localStudents = allStudentsRaw2.filter(
     (s) => s.teacherName === selectedUstaad,
   );
-  const localAttendance = getAttendance();
-  const localFees = getFees();
-  const localSabak = getSabak();
 
   const handlePrint = () => {
     if (!selectedUstaad) return;

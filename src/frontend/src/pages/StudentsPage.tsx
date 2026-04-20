@@ -22,10 +22,12 @@ import {
   type Student,
   type Teacher,
   addActivityLogEntry,
+  addStudent,
   createId,
+  deleteStudent,
   getStudents,
   getTeachers,
-  saveStudents,
+  updateStudent,
 } from "@/lib/storage";
 import type { AppPage } from "@/types/dashboard";
 import { STUDENT_CLASS_OPTIONS } from "@/types/index";
@@ -147,8 +149,12 @@ export default function StudentsPage({
   } | null>(null);
 
   useEffect(() => {
-    setAllStudents(getStudents());
-    setTeachers(getTeachers());
+    getStudents()
+      .then(setAllStudents)
+      .catch(() => setAllStudents([]));
+    getTeachers()
+      .then(setTeachers)
+      .catch(() => setTeachers([]));
   }, []);
 
   const isAdmin = session.role === "admin";
@@ -204,7 +210,7 @@ export default function StudentsPage({
 
   // ─── Handlers ──────────────────────────────────────────────────────────────
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!form.name.trim() || !form.timeSlot) return;
     const newStudent: Student = {
       id: createId(),
@@ -224,13 +230,13 @@ export default function StudentsPage({
       admissionDate: form.admissionDate,
       studentClass: form.studentClass,
     };
+    await addStudent(newStudent);
     const updated = [newStudent, ...allStudents];
-    saveStudents(updated);
     setAllStudents(updated);
 
     // Activity log
     const actor = isTeacher ? session.name : "Admin";
-    addActivityLogEntry({
+    await addActivityLogEntry({
       actorName: actor,
       actorRole: isTeacher ? "ustaad" : "admin",
       action: "added_student",
@@ -242,7 +248,6 @@ export default function StudentsPage({
     setShowAddModal(false);
     setPage(1);
     toast.success(`${newStudent.name} added successfully`);
-    // Show WhatsApp notification option
     setAddedStudentWa({
       name: newStudent.name,
       mobile: newStudent.parentMobile,
@@ -267,7 +272,7 @@ export default function StudentsPage({
     });
   };
 
-  const handleEditSave = () => {
+  const handleEditSave = async () => {
     if (!editTarget || !editForm.name.trim()) return;
     const updated = allStudents.map((s) =>
       s.id === editTarget.id
@@ -290,10 +295,11 @@ export default function StudentsPage({
           }
         : s,
     );
-    saveStudents(updated);
+    const editedStudent = updated.find((s) => s.id === editTarget.id);
+    if (editedStudent) await updateStudent(editedStudent);
     setAllStudents(updated);
     setEditTarget(null);
-    addActivityLogEntry({
+    await addActivityLogEntry({
       actorName: isTeacher ? session.name : "Admin",
       actorRole: isTeacher ? "ustaad" : "admin",
       action: "updated_student",
@@ -302,12 +308,12 @@ export default function StudentsPage({
     toast.success("Student updated successfully");
   };
 
-  const handleDelete = (id: string, name: string) => {
+  const handleDelete = async (id: string, name: string) => {
+    await deleteStudent(id);
     const updated = allStudents.filter((s) => s.id !== id);
-    saveStudents(updated);
     setAllStudents(updated);
     setDeleteTarget(null);
-    addActivityLogEntry({
+    await addActivityLogEntry({
       actorName: isTeacher ? session.name : "Admin",
       actorRole: isTeacher ? "ustaad" : "admin",
       action: "removed_student",

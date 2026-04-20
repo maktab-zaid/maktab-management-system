@@ -81,43 +81,45 @@ export default function AddStudentTeacherPage({
       return;
     }
     setSaving(true);
-    try {
-      const student: Student = {
-        id: `ms-${Date.now()}`,
-        name: form.name.trim(),
-        fatherName: form.fatherName.trim(),
-        parentMobile: form.parentMobile.trim(),
-        className: form.className,
-        teacherName: teacherName,
-        fees: 800,
-        feesStatus: "pending",
-        timeSlot: effectiveSlot,
-        address: form.address,
-        rollNumber: form.rollNumber,
-        admissionDate: form.admissionDate,
-      };
-      const all = getStudents();
-      saveStudents([...all, student]);
-
-      // Activity log
-      if (teacherName) {
-        addActivityLogEntry({
-          actorName: teacherName,
-          actorRole: "ustaad",
-          action: "added_student",
-          targetStudentName: student.name,
-          details: `in ${SLOT_LABELS[effectiveSlot]} shift`,
-        });
-      }
-
-      toast.success("Student added successfully");
-      setForm({ ...EMPTY_FORM });
-      onSuccess?.();
-    } catch {
-      toast.error("Failed to add student");
-    } finally {
-      setSaving(false);
-    }
+    const student: Student = {
+      id: `ms-${Date.now()}`,
+      name: form.name.trim(),
+      fatherName: form.fatherName.trim(),
+      parentMobile: form.parentMobile.trim(),
+      className: form.className,
+      teacherName: teacherName,
+      fees: 800,
+      feesStatus: "pending",
+      timeSlot: effectiveSlot,
+      address: form.address,
+      rollNumber: form.rollNumber,
+      admissionDate: form.admissionDate,
+    };
+    getStudents()
+      .then((all) => {
+        return saveStudents([...all, student]);
+      })
+      .then(() => {
+        // Activity log
+        if (teacherName) {
+          addActivityLogEntry({
+            actorName: teacherName,
+            actorRole: "ustaad",
+            action: "added_student",
+            targetStudentName: student.name,
+            details: `in ${SLOT_LABELS[effectiveSlot]} shift`,
+          });
+        }
+        toast.success("Student added successfully");
+        setForm({ ...EMPTY_FORM });
+        onSuccess?.();
+      })
+      .catch(() => {
+        toast.error("Failed to add student");
+      })
+      .finally(() => {
+        setSaving(false);
+      });
   };
 
   return (

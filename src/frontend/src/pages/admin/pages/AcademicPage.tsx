@@ -1,7 +1,12 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { getSabakRecords, getStudents } from "@/lib/storage";
+import {
+  type SabakRecord,
+  type Student,
+  getSabakRecords,
+  getStudents,
+} from "@/lib/storage";
 import {
   BookOpen,
   Clock,
@@ -14,7 +19,7 @@ import {
   Sun,
   Target,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const COURSES = [
   "Ibtidayyah",
@@ -83,18 +88,18 @@ const SABAK_SECTIONS = [
 ];
 
 export default function AcademicPage() {
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [sabakRecords, setSabakRecords] = useState<SabakRecord[]>([]);
+  const [, setRefreshKey] = useState(0);
 
-  const students = useMemo(() => {
-    void refreshKey;
-    return getStudents();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey]);
-  const sabakRecords = useMemo(() => {
-    void refreshKey;
-    return getSabakRecords();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey]);
+  useEffect(() => {
+    getStudents()
+      .then(setStudents)
+      .catch(() => setStudents([]));
+    getSabakRecords()
+      .then(setSabakRecords)
+      .catch(() => setSabakRecords([]));
+  }, []);
 
   // Sabak summary: count students with records per section
   const sectionCounts = useMemo(() => {
@@ -133,7 +138,15 @@ export default function AcademicPage() {
           variant="outline"
           size="sm"
           className="gap-2"
-          onClick={() => setRefreshKey((k) => k + 1)}
+          onClick={() => {
+            setRefreshKey((k) => k + 1);
+            getStudents()
+              .then(setStudents)
+              .catch(() => {});
+            getSabakRecords()
+              .then(setSabakRecords)
+              .catch(() => {});
+          }}
           data-ocid="admin.academic.refresh_button"
         >
           <RefreshCw className="w-3.5 h-3.5" />
