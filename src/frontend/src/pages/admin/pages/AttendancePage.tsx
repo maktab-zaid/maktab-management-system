@@ -80,13 +80,15 @@ function StudentAttendanceTab() {
         ? AttendanceStatus.absent
         : AttendanceStatus.present;
     try {
+      const studentName =
+        students.find((s) => s.id === selectedStudentId)?.name ?? "";
       await markAttendance.mutateAsync({
         id: existing?.id ?? `att-${selectedStudentId}-${dateStr}`,
         studentId: selectedStudentId,
+        studentName,
         date: dateStr,
         status: newStatus,
         markedBy: "admin",
-        createdAt: BigInt(Date.now()),
       });
       refetch();
     } catch {

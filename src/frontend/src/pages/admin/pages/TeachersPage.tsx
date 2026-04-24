@@ -181,7 +181,6 @@ export default function TeachersPage() {
       const teacherData: Teacher = {
         ...(editTeacher ?? {}),
         id: editTeacher?.id ?? `teacher-${crypto.randomUUID()}`,
-        createdAt: editTeacher?.createdAt ?? BigInt(Date.now()),
         name: formData.name.trim(),
         class: editTeacher?.class ?? "",
         mobile: formData.mobile.trim(),
@@ -198,8 +197,9 @@ export default function TeachersPage() {
         toast.success("Teacher added");
       }
       setDialogOpen(false);
-    } catch {
-      toast.error("Failed to save teacher");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to save teacher";
+      toast.error(msg);
     }
   };
 
@@ -356,9 +356,7 @@ export default function TeachersPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">
-                          {t.createdAt
-                            ? new Date(Number(t.createdAt)).toLocaleDateString()
-                            : "—"}
+                          {"—"}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">

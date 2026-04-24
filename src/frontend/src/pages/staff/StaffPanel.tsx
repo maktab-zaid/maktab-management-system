@@ -12,9 +12,8 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
-import { useStudentsSheet } from "../../hooks/useGoogleSheets";
 import type { StaffPage } from "../../types";
-import { normalizeMobile } from "../../utils/googleSheets";
+
 import MonthlyReportPage from "./pages/MonthlyReportPage";
 import StaffStudentDataPage from "./pages/StaffStudentDataPage";
 import StaffStudentsPage from "./pages/StaffStudentsPage";
@@ -46,16 +45,9 @@ export default function StaffPanel({ onLogout, mobileNumber }: Props) {
   const [activePage, setActivePage] = useState<StaffPage>("my-students");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Look up staff name from Google Sheets (Students Sheet may have teacher records too)
-  const { data: sheetStudents = [] } = useStudentsSheet();
-  const normalizedMobile = normalizeMobile(mobileNumber);
-  const staffRecord = sheetStudents.find(
-    (s) => normalizeMobile(s.mobile) === normalizedMobile,
-  );
-  const staffName = staffRecord?.name ?? "";
-
-  // Derive teacher name: if staff is also listed as a teacher, use their name for filtering students
-  const teacherName = staffRecord?.teacher || staffRecord?.name || "";
+  // Staff name from mobile number — passed in from login context
+  const staffName = "";
+  const teacherName = "";
 
   const currentNav = navItems.find((n) => n.id === activePage);
 

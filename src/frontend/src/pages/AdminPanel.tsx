@@ -12,13 +12,13 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  APPS_SCRIPT_URL,
-  type ReportRow,
-  type StudentRow,
+  type Student,
+  type Teacher,
   addStudent,
-  getReports,
+  createId,
   getStudents,
-} from "@/lib/api";
+  getTeachers,
+} from "@/lib/storage";
 import {
   ArrowLeft,
   FileText,
@@ -30,7 +30,16 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
-const CLASS_OPTIONS = ["Hifz", "Nazra", "Qaida", "Other"];
+const CLASS_OPTIONS = [
+  "Ibtidayyah",
+  "Nisf Qaida",
+  "Mukammal Qaida",
+  "Nisf Amma Para",
+  "Mukammal Amma",
+  "Nazra",
+  "Hifz",
+  "Other",
+];
 
 interface AdminPanelProps {
   onBack: () => void;
@@ -40,60 +49,49 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   const [name, setName] = useState("");
   const [mobile, setMobile] = useState("");
   const [className, setClassName] = useState("");
-  const [teacher, setTeacher] = useState("");
+  const [selectedTeacherId, setSelectedTeacherId] = useState("");
   const [fees, setFees] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const [students, setStudents] = useState<StudentRow[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
   const [studentsLoading, setStudentsLoading] = useState(false);
   const [studentsError, setStudentsError] = useState(false);
 
-  const [reports, setReports] = useState<ReportRow[]>([]);
-  const [reportsLoading, setReportsLoading] = useState(false);
-  const [reportsError, setReportsError] = useState(false);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [teachersLoading, setTeachersLoading] = useState(false);
+
+  const loadTeachers = useCallback(async () => {
+    setTeachersLoading(true);
+    try {
+      const rows = await getTeachers();
+      setTeachers(rows);
+    } catch (e) {
+      console.error("[AdminPanel] loadTeachers:", e);
+    } finally {
+      setTeachersLoading(false);
+    }
+  }, []);
 
   const loadStudents = useCallback(async () => {
     setStudentsLoading(true);
     setStudentsError(false);
-    const timer = setTimeout(() => {
-      setStudentsLoading(false);
-      setStudentsError(true);
-    }, 2000);
     try {
       const rows = await getStudents();
-      clearTimeout(timer);
       setStudents(rows);
-    } catch {
-      clearTimeout(timer);
+    } catch (e) {
+      console.error("[AdminPanel] loadStudents:", e);
       setStudentsError(true);
     } finally {
       setStudentsLoading(false);
-    }
-  }, []);
-
-  const loadReports = useCallback(async () => {
-    setReportsLoading(true);
-    setReportsError(false);
-    const timer = setTimeout(() => {
-      setReportsLoading(false);
-      setReportsError(true);
-    }, 2000);
-    try {
-      const rows = await getReports();
-      clearTimeout(timer);
-      setReports(rows);
-    } catch {
-      clearTimeout(timer);
-      setReportsError(true);
-    } finally {
-      setReportsLoading(false);
     }
   }, []);
 
   useEffect(() => {
     loadStudents();
-    loadReports();
-  }, [loadStudents, loadReports]);
+    loadTeachers();
+  }, [loadStudents, loadTeachers]);
+
+  const selectedTeacher = teachers.find((t) => t.id === selectedTeacherId);
 
   const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -107,18 +105,23 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
     }
     setSaving(true);
     try {
-      await addStudent({
+      const newStudent: Student = {
+        id: createId(),
         name: name.trim(),
-        mobile: mobile.trim(),
-        className: className || "Other",
-        teacher: teacher.trim(),
-        fees: fees.trim(),
-        addedAt: new Date().toLocaleDateString("en-IN"),
-      });
+        fatherName: "",
+        parentMobile: mobile.trim(),
+        timeSlot: "",
+        teacherName: selectedTeacher?.name ?? "",
+        fees: Number(fees) || 0,
+        feesStatus: "pending",
+        studentClass: className || "Other",
+        admissionDate: new Date().toLocaleDateString("en-IN"),
+      };
+      await addStudent(newStudent);
       setName("");
       setMobile("");
       setClassName("");
-      setTeacher("");
+      setSelectedTeacherId("");
       setFees("");
       toast.success(`Student "${name.trim()}" added successfully`);
       await loadStudents();
@@ -150,16 +153,6 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-6">
-        {!APPS_SCRIPT_URL && (
-          <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-            ⚙️ Setup required: Paste your Apps Script Web App URL in{" "}
-            <code className="font-mono text-xs bg-amber-100 px-1 rounded">
-              src/frontend/src/lib/api.ts
-            </code>{" "}
-            to enable live data sync.
-          </div>
-        )}
-
         <Tabs defaultValue="add" className="w-full">
           <TabsList className="w-full mb-6 bg-secondary/50 rounded-xl p-1">
             <TabsTrigger
@@ -250,14 +243,38 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
                   </div>
                   <div>
                     <Label htmlFor="student-teacher">Teacher</Label>
-                    <Input
-                      data-ocid="admin.student-teacher.input"
-                      id="student-teacher"
-                      value={teacher}
-                      onChange={(e) => setTeacher(e.target.value)}
-                      placeholder="Assigned teacher"
-                      className="mt-1"
-                    />
+                    {teachersLoading ? (
+                      <div className="mt-1 h-10 rounded-md border bg-muted animate-pulse" />
+                    ) : (
+                      <Select
+                        value={selectedTeacherId}
+                        onValueChange={setSelectedTeacherId}
+                      >
+                        <SelectTrigger
+                          data-ocid="admin.student-teacher.select"
+                          id="student-teacher"
+                          className="mt-1"
+                        >
+                          <SelectValue
+                            placeholder={
+                              teachers.length === 0
+                                ? "No teachers yet — add teachers first"
+                                : "Select teacher"
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {teachers.map((t) => (
+                            <SelectItem key={t.id} value={t.id}>
+                              {t.name}
+                              {t.shifts && t.shifts.length > 0
+                                ? ` (${t.shifts.join(", ")})`
+                                : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="student-fees">Monthly Fees (₹)</Label>
@@ -320,8 +337,8 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
                   data-ocid="admin.students.error_state"
                   className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
                 >
-                  ⚠️ Could not fetch from Google Sheets. Check your Apps Script
-                  URL and sheet permissions.
+                  ⚠️ Could not fetch students from Supabase. Check your
+                  connection and try again.
                 </div>
               )}
 
@@ -343,23 +360,23 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
                 <div className="space-y-2">
                   {students.map((s, idx) => (
                     <Card
-                      key={`student-${s.Mobile || s.Name}-${idx}`}
+                      key={s.id}
                       data-ocid={`admin.sheet-student.item.${idx + 1}`}
                       className="shadow-card border-0"
                     >
                       <CardContent className="p-4 flex items-center justify-between">
                         <div>
                           <p className="font-semibold text-foreground">
-                            {s.Name}
+                            {s.name}
                           </p>
                           <p className="text-sm text-muted-foreground">
-                            {s.Class}
-                            {s.Teacher ? ` · ${s.Teacher}` : ""}
+                            {s.studentClass || s.className || ""}
+                            {s.teacherName ? ` · ${s.teacherName}` : ""}
                           </p>
                         </div>
-                        {s.Fees && (
+                        {s.fees > 0 && (
                           <p className="text-sm font-medium text-primary">
-                            ₹{s.Fees}
+                            ₹{s.fees}
                           </p>
                         )}
                       </CardContent>
@@ -383,89 +400,16 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
 
           {/* Monthly Reports Tab */}
           <TabsContent value="reports">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="font-semibold text-primary text-base">
-                  Monthly Reports
-                </h2>
-                <Button
-                  data-ocid="admin.reports.refresh.button"
-                  variant="outline"
-                  size="sm"
-                  onClick={loadReports}
-                  disabled={reportsLoading}
-                  className="text-primary border-primary/30"
-                >
-                  <RefreshCw
-                    className={`w-4 h-4 mr-1 ${
-                      reportsLoading ? "animate-spin" : ""
-                    }`}
-                  />
-                  Refresh
-                </Button>
-              </div>
-
-              {reportsError && (
-                <div
-                  data-ocid="admin.reports.error_state"
-                  className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
-                >
-                  ⚠️ Could not fetch from Google Sheets. Check your Apps Script
-                  URL and sheet permissions.
-                </div>
-              )}
-
-              {reportsLoading ? (
-                <div
-                  data-ocid="admin.reports.loading_state"
-                  className="space-y-2"
-                >
-                  {["r1", "r2", "r3"].map((k) => (
-                    <Card key={k} className="shadow-card border-0">
-                      <CardContent className="p-4">
-                        <Skeleton className="h-5 w-40 mb-2" />
-                        <Skeleton className="h-4 w-56" />
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              ) : reports.length > 0 ? (
-                <div className="space-y-2">
-                  {reports.map((r, idx) => (
-                    <Card
-                      key={`report-${r.StudentName}-${idx}`}
-                      data-ocid={`admin.report.item.${idx + 1}`}
-                      className="shadow-card border-0"
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex justify-between mb-1">
-                          <p className="font-semibold">{r.StudentName}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {r.Date}
-                          </p>
-                        </div>
-                        <div className="grid grid-cols-2 gap-1 text-sm text-muted-foreground">
-                          <span>Attendance: {r.Attendance} days</span>
-                          <span>Fees: {r.Fees}</span>
-                          <span>Sabak: {r.Sabak}</span>
-                          <span>Akhlaq: {r.Akhlaq}</span>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              ) : (
-                <div
-                  data-ocid="admin.reports.empty_state"
-                  className="text-center py-12 text-muted-foreground"
-                >
-                  <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  <p>No reports yet</p>
-                  <p className="text-xs mt-1">
-                    Reports submitted by teachers will appear here
-                  </p>
-                </div>
-              )}
+            <div
+              data-ocid="admin.reports.empty_state"
+              className="text-center py-12 text-muted-foreground"
+            >
+              <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
+              <p>Reports are available in the main Admin dashboard</p>
+              <p className="text-xs mt-1">
+                Use the full admin panel to view attendance, fees, and sabak
+                reports
+              </p>
             </div>
           </TabsContent>
         </Tabs>

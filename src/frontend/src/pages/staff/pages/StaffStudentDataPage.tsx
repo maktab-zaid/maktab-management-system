@@ -10,23 +10,46 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { getStudents } from "@/lib/storage";
+import { useQuery } from "@tanstack/react-query";
 import { BookOpen, Search } from "lucide-react";
 import { useState } from "react";
-import { useTeacherStudents } from "../../../hooks/useGoogleSheets";
 
 interface Props {
   teacherName: string;
 }
 
 export default function StaffStudentDataPage({ teacherName }: Props) {
-  const { data: students = [], isLoading } = useTeacherStudents(teacherName);
+  const { data: allStudents = [], isLoading } = useQuery({
+    queryKey: ["students"],
+    queryFn: async () => {
+      try {
+        return await getStudents();
+      } catch (e) {
+        console.error("[StaffStudentDataPage] getStudents:", e);
+        return [];
+      }
+    },
+    staleTime: 30_000,
+  });
+
+  const students = teacherName
+    ? allStudents.filter(
+        (s) =>
+          s.teacherName.toLowerCase().trim() ===
+          teacherName.toLowerCase().trim(),
+      )
+    : allStudents;
+
   const [search, setSearch] = useState("");
 
   const filtered = students.filter(
     (s) =>
       s.name.toLowerCase().includes(search.toLowerCase()) ||
-      s.className.toLowerCase().includes(search.toLowerCase()) ||
-      s.mobile.includes(search),
+      (s.studentClass ?? s.className ?? "")
+        .toLowerCase()
+        .includes(search.toLowerCase()) ||
+      s.parentMobile.includes(search),
   );
 
   return (
@@ -52,13 +75,7 @@ export default function StaffStudentDataPage({ teacherName }: Props) {
           <Card className="shadow-card">
             <CardContent className="p-4">
               <p className="text-2xl font-bold text-success">
-                {
-                  students.filter(
-                    (s) =>
-                      s.feesStatus.toLowerCase() === "paid" ||
-                      s.feesStatus.toLowerCase() === "active",
-                  ).length
-                }
+                {students.filter((s) => s.feesStatus === "paid").length}
               </p>
               <p className="text-xs text-muted-foreground">Fees Paid</p>
             </CardContent>
@@ -66,11 +83,7 @@ export default function StaffStudentDataPage({ teacherName }: Props) {
           <Card className="shadow-card">
             <CardContent className="p-4">
               <p className="text-2xl font-bold text-warning">
-                {
-                  students.filter(
-                    (s) => s.feesStatus.toLowerCase() === "pending",
-                  ).length
-                }
+                {students.filter((s) => s.feesStatus === "pending").length}
               </p>
               <p className="text-xs text-muted-foreground">Fees Pending</p>
             </CardContent>
@@ -79,8 +92,13 @@ export default function StaffStudentDataPage({ teacherName }: Props) {
             <CardContent className="p-4">
               <p className="text-2xl font-bold text-chart-2">
                 {
-                  [...new Set(students.map((s) => s.className).filter(Boolean))]
-                    .length
+                  [
+                    ...new Set(
+                      students
+                        .map((s) => s.studentClass ?? s.className)
+                        .filter(Boolean),
+                    ),
+                  ].length
                 }
               </p>
               <p className="text-xs text-muted-foreground">Classes</p>
@@ -132,16 +150,15 @@ export default function StaffStudentDataPage({ teacherName }: Props) {
                   <TableHead className="font-semibold">#</TableHead>
                   <TableHead className="font-semibold">Name</TableHead>
                   <TableHead className="font-semibold">Class</TableHead>
-                  <TableHead className="font-semibold">Sabak</TableHead>
-                  <TableHead className="font-semibold">Attendance</TableHead>
+                  <TableHead className="font-semibold">Session</TableHead>
                   <TableHead className="font-semibold">Fees</TableHead>
-                  <TableHead className="font-semibold">Akhlaq</TableHead>
+                  <TableHead className="font-semibold">Mobile</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filtered.map((s, i) => (
                   <TableRow
-                    key={`${s.mobile}-${i}`}
+                    key={s.id}
                     data-ocid={`staff.studentdata.item.${i + 1}`}
                     className="hover:bg-muted/30 transition-colors"
                   >
@@ -159,27 +176,23 @@ export default function StaffStudentDataPage({ teacherName }: Props) {
                       </div>
                     </TableCell>
                     <TableCell>
-                      {s.className ? (
+                      {(s.studentClass ?? s.className) ? (
                         <Badge variant="outline" className="text-xs">
-                          {s.className}
+                          {s.studentClass ?? s.className}
                         </Badge>
                       ) : (
                         "—"
                       )}
                     </TableCell>
-                    <TableCell className="text-sm">
-                      {s.currentSabak || "—"}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {s.attendance || "—"}
+                    <TableCell className="text-sm capitalize">
+                      {s.timeSlot || "—"}
                     </TableCell>
                     <TableCell>
                       {s.feesStatus ? (
                         <Badge
                           variant="outline"
                           className={`text-xs ${
-                            s.feesStatus.toLowerCase() === "paid" ||
-                            s.feesStatus.toLowerCase() === "active"
+                            s.feesStatus === "paid"
                               ? "bg-success/15 text-success-foreground border-success/30"
                               : "bg-warning/15 text-warning-foreground border-warning/30"
                           }`}
@@ -190,7 +203,9 @@ export default function StaffStudentDataPage({ teacherName }: Props) {
                         "—"
                       )}
                     </TableCell>
-                    <TableCell className="text-sm">{s.akhlaq || "—"}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {s.parentMobile || "—"}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

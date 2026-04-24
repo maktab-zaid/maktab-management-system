@@ -11,10 +11,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  type SabakRecord,
+  createId,
+  getSabakRecords,
+  getStudents,
+  saveSabakRecords,
+} from "@/lib/storage";
 import { CheckCircle2, ClipboardList } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { useTeacherStudents } from "../../../hooks/useGoogleSheets";
 
 interface Props {
   teacherName: string;
@@ -55,23 +61,68 @@ const EMPTY_REPORT: ReportEntry = {
 
 const CURRENT_MONTH = MONTHS[new Date().getMonth()];
 
+/** Convert a SabakRecord to the display ReportEntry shape */
+function sabakToReport(r: SabakRecord): ReportEntry {
+  return {
+    studentName: r.studentName,
+    month: r.lessonName?.startsWith("month:") ? r.lessonName.slice(6) : "",
+    presentDays: String(r.progress ?? ""),
+    sabak: r.currentLesson ?? "",
+    akhlaq: r.previousLesson ?? "",
+    notes: r.remarks ?? "",
+  };
+}
+
 export default function MonthlyReportPage({ teacherName }: Props) {
-  const { data: students = [], isLoading } = useTeacherStudents(teacherName);
+  const [studentNames, setStudentNames] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [form, setForm] = useState<ReportEntry>({
     ...EMPTY_REPORT,
     month: CURRENT_MONTH,
   });
   const [submitted, setSubmitted] = useState(false);
-  const [savedReports, setSavedReports] = useState<ReportEntry[]>(() => {
-    try {
-      const stored = localStorage.getItem("staff_monthly_reports");
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [savedReports, setSavedReports] = useState<ReportEntry[]>([]);
 
-  const handleSave = () => {
+  // Load students from Supabase
+  useEffect(() => {
+    setIsLoading(true);
+    getStudents()
+      .then((all) => {
+        const filtered = teacherName
+          ? all.filter(
+              (s) =>
+                s.teacherName.toLowerCase().trim() ===
+                teacherName.toLowerCase().trim(),
+            )
+          : all;
+        setStudentNames(filtered.map((s) => s.name).filter(Boolean));
+      })
+      .catch((e) => {
+        console.error("[MonthlyReportPage] getStudents:", e);
+        setStudentNames([]);
+      })
+      .finally(() => setIsLoading(false));
+  }, [teacherName]);
+
+  // Load saved reports from Supabase on mount
+  useEffect(() => {
+    getSabakRecords()
+      .then((all) => {
+        const reports = all
+          .filter(
+            (r) =>
+              r.updatedBy === teacherName ||
+              r.updatedBy === "staff" ||
+              r.updatedBy.startsWith("staff:"),
+          )
+          .map(sabakToReport)
+          .filter((r) => r.studentName);
+        setSavedReports(reports);
+      })
+      .catch(() => setSavedReports([]));
+  }, [teacherName]);
+
+  const handleSave = async () => {
     if (!form.studentName) {
       toast.error("Please select a student");
       return;
@@ -81,13 +132,32 @@ export default function MonthlyReportPage({ teacherName }: Props) {
       return;
     }
 
-    const updated = [form, ...savedReports];
-    setSavedReports(updated);
-    localStorage.setItem("staff_monthly_reports", JSON.stringify(updated));
-    toast.success(`Report saved for ${form.studentName} — ${form.month}`);
-    setSubmitted(true);
-    setForm({ ...EMPTY_REPORT, month: CURRENT_MONTH });
-    setTimeout(() => setSubmitted(false), 3000);
+    const record: SabakRecord = {
+      id: createId(),
+      studentId: "",
+      studentName: form.studentName,
+      // Store month in lessonName with a prefix so we can recover it
+      lessonName: `month:${form.month}`,
+      progress: Number(form.presentDays) || 0,
+      currentLesson: form.sabak,
+      previousLesson: form.akhlaq,
+      remarks: form.notes,
+      updatedBy: teacherName || "staff",
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      await saveSabakRecords([record]);
+      const updated = [form, ...savedReports];
+      setSavedReports(updated);
+      toast.success(`Report saved for ${form.studentName} — ${form.month}`);
+      setSubmitted(true);
+      setForm({ ...EMPTY_REPORT, month: CURRENT_MONTH });
+      setTimeout(() => setSubmitted(false), 3000);
+    } catch (e) {
+      console.error("[MonthlyReportPage] save failed:", e);
+      toast.error("Failed to save report");
+    }
   };
 
   return (
@@ -124,9 +194,9 @@ export default function MonthlyReportPage({ teacherName }: Props) {
                   />
                 </SelectTrigger>
                 <SelectContent>
-                  {students.map((s, i) => (
-                    <SelectItem key={`${s.mobile}-${i}`} value={s.name}>
-                      {s.name}
+                  {studentNames.map((name) => (
+                    <SelectItem key={name} value={name}>
+                      {name}
                     </SelectItem>
                   ))}
                 </SelectContent>

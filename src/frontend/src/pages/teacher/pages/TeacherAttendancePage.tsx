@@ -37,13 +37,14 @@ export default function TeacherAttendancePage({ teacherId, onBack }: Props) {
     setLocalStatus((p) => ({ ...p, [studentId]: status }));
     setSaving((p) => ({ ...p, [studentId]: true }));
     try {
+      const studentName = students.find((s) => s.id === studentId)?.name ?? "";
       await markAttendance.mutateAsync({
         id: `att-${studentId}-${selectedDate}`,
         studentId,
+        studentName,
         date: selectedDate,
         status,
         markedBy: teacherId,
-        createdAt: BigInt(Date.now()),
       });
       toast.success("Attendance marked");
     } catch {
@@ -158,7 +159,7 @@ export default function TeacherAttendancePage({ teacherId, onBack }: Props) {
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-foreground">{s.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {s.className} &bull; {s.timing}
+                    {s.studentClass ?? s.className ?? ""} &bull; {s.timeSlot}
                   </p>
                 </div>
                 <div className="flex gap-2">

@@ -14,9 +14,11 @@ import {
   type FeeRecord,
   type Session,
   type Student,
+  type Teacher,
   createId,
   getFees,
   getStudents,
+  getTeachers,
   saveFees,
 } from "@/lib/storage";
 import type { AppPage } from "@/types/dashboard";
@@ -658,6 +660,7 @@ function AddFeeModal({ students, onClose, onSave }: AddFeeModalProps) {
 
 export default function FeesPage({ session, setActivePage }: FeesPageProps) {
   const [allStudents, setAllStudents] = useState<Student[]>([]);
+  const [allTeachers, setAllTeachers] = useState<Teacher[]>([]);
   const [records, setRecords] = useState<FeeRecord[]>([]);
   const [filter, setFilter] = useState<FilterOption>("All");
   const [search, setSearch] = useState("");
@@ -672,6 +675,9 @@ export default function FeesPage({ session, setActivePage }: FeesPageProps) {
     getStudents()
       .then(setAllStudents)
       .catch(() => setAllStudents([]));
+    getTeachers()
+      .then(setAllTeachers)
+      .catch(() => setAllTeachers([]));
     getFees()
       .then(setRecords)
       .catch(() => setRecords([]));
@@ -774,22 +780,8 @@ export default function FeesPage({ session, setActivePage }: FeesPageProps) {
   function getTeacherMobile(fee: FeeRecord): string {
     const student = allStudents.find((s) => s.id === fee.studentId);
     if (!student) return "";
-    // Try to find teacher mobile from getTeachers, but we don't import it here
-    // Use a simple fallback: teacher mobile from stored teachers via localStorage
-    try {
-      const raw = localStorage.getItem("madrasa_teachers");
-      if (raw) {
-        const teachers = JSON.parse(raw) as Array<{
-          name: string;
-          mobile: string;
-        }>;
-        const t = teachers.find((t) => t.name === student.teacherName);
-        return t?.mobile ?? "";
-      }
-    } catch {
-      // ignore
-    }
-    return "";
+    const teacher = allTeachers.find((t) => t.name === student.teacherName);
+    return teacher?.mobile ?? teacher?.mobileNumber ?? "";
   }
 
   function rowBg(status: "paid" | "pending") {

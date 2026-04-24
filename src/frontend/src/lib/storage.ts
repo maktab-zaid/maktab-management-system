@@ -325,27 +325,6 @@ function studentToRow(s: Student): Record<string, unknown> {
   };
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: db row shape unknown at compile time
-function rowToTeacher(row: Record<string, any>): Teacher {
-  let shifts: string[] = [];
-  try {
-    shifts = Array.isArray(row.shifts)
-      ? row.shifts
-      : JSON.parse(row.shifts || "[]");
-  } catch {
-    shifts = [];
-  }
-  return {
-    id: row.id,
-    name: row.name,
-    mobile: row.mobile ?? "",
-    mobileNumber: row.mobile_number ?? "",
-    salary: Number(row.salary ?? 0),
-    shifts,
-    timeSlot: row.time_slot ?? "",
-  };
-}
-
 function teacherToRow(t: Teacher): Record<string, unknown> {
   const shifts = t.shifts ?? [];
   return {
@@ -687,17 +666,29 @@ export async function deleteStudent(id: string): Promise<void> {
 // ─── Teachers ─────────────────────────────────────────────────────────────────
 
 export async function getTeachers(): Promise<Teacher[]> {
-  if (!supabase) return [];
+  console.log("Fetching teachers...");
+  if (!supabase) {
+    console.warn(
+      "[Supabase] getTeachers: Supabase not configured — returning []",
+    );
+    return [];
+  }
   try {
-    const { data, error } = await supabase
-      .from("teachers")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const { data, error } = await supabase.from("teachers").select("*");
     if (error) {
-      console.error("[Supabase] getTeachers:", error.message);
+      console.error("Fetch error:", error);
       return [];
     }
-    return (data ?? []).map(rowToTeacher);
+    console.log("Teachers:", data);
+    // biome-ignore lint/suspicious/noExplicitAny: db row shape unknown at compile time
+    return (data || []).map((row: Record<string, any>) => ({
+      id: row.id,
+      name: row.name,
+      mobile: row.mobile ?? "",
+      // support both 'session' (new inserts) and 'time_slot' (legacy)
+      timeSlot: row.session ?? row.time_slot ?? "",
+      shifts: [],
+    }));
   } catch (e) {
     console.error("[Supabase] getTeachers exception:", e);
     return [];
@@ -716,17 +707,31 @@ export async function saveTeachers(teachers: Teacher[]): Promise<void> {
   }
 }
 
-export async function addTeacher(teacher: Teacher): Promise<Teacher> {
-  if (!supabase) return teacher;
+export async function addTeacher(
+  name: string,
+  mobile: string,
+  session: string,
+): Promise<unknown> {
+  console.log("Adding teacher:", name, mobile, session);
+  if (!supabase) {
+    console.warn(
+      "[Supabase] addTeacher: Supabase not configured — skipping insert",
+    );
+    return null;
+  }
   try {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("teachers")
-      .insert(teacherToRow(teacher));
-    if (error) console.error("[Supabase] addTeacher:", error.message);
+      .insert([{ name, mobile, session }]);
+    if (error) {
+      console.error("Insert error:", error);
+      return null;
+    }
+    return data;
   } catch (e) {
     console.error("[Supabase] addTeacher exception:", e);
+    return null;
   }
-  return teacher;
 }
 
 export async function deleteTeacher(id: string): Promise<void> {

@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getStudents } from "@/lib/api";
+import { getFees, getStudents, getTeachers } from "@/lib/storage";
 import {
   ArrowLeft,
   Banknote,
@@ -38,42 +38,31 @@ export default function StatusPage({ onBack }: StatusPageProps) {
 
   const loadStats = useCallback(async () => {
     setLoading(true);
-    const timer = setTimeout(() => {
-      setStats((prev) => ({ ...prev, loaded: true, error: true }));
-      setLoading(false);
-    }, 2000);
-
     try {
-      const rows = await getStudents();
-      clearTimeout(timer);
+      const [students, teachers, fees] = await Promise.all([
+        getStudents(),
+        getTeachers(),
+        getFees(),
+      ]);
 
-      const totalStudents = rows.length;
+      const feesCollected = fees
+        .filter((f) => f.status === "paid")
+        .reduce((sum, f) => sum + f.amount, 0);
 
-      const uniqueTeachers = new Set(rows.map((r) => r.Teacher).filter(Boolean))
-        .size;
-
-      let feesCollected = 0;
-      let pendingFees = 0;
-
-      for (const row of rows) {
-        const feeVal = Number.parseFloat(row.Fees);
-        if (!Number.isNaN(feeVal)) {
-          feesCollected += feeVal;
-        } else if (row.Fees && row.Fees.toLowerCase() === "pending") {
-          pendingFees += 1;
-        }
-      }
+      const pendingFees = fees
+        .filter((f) => f.status === "pending")
+        .reduce((sum, f) => sum + f.amount, 0);
 
       setStats({
-        totalStudents,
-        totalTeachers: uniqueTeachers,
+        totalStudents: students.length,
+        totalTeachers: teachers.length,
         feesCollected,
         pendingFees,
         loaded: true,
         error: false,
       });
-    } catch {
-      clearTimeout(timer);
+    } catch (e) {
+      console.error("[StatusPage] loadStats:", e);
       setStats((prev) => ({ ...prev, loaded: true, error: true }));
     } finally {
       setLoading(false);
@@ -157,9 +146,8 @@ export default function StatusPage({ onBack }: StatusPageProps) {
             data-ocid="status.error_state"
             className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
           >
-            ⚠️ Could not load data from Google Sheets. Make sure the Apps Script
-            URL is configured and the sheet is shared as &quot;Anyone with the
-            link can view&quot;.
+            ⚠️ Could not load data from Supabase. Check your connection and
+            ensure the database tables are set up correctly.
           </div>
         )}
 
@@ -207,10 +195,9 @@ export default function StatusPage({ onBack }: StatusPageProps) {
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-sm text-muted-foreground pb-5">
-                Data is fetched live from Google Sheets via Apps Script.
+                Data is fetched live from Supabase.
                 <br />
-                Ensure sheets are shared as &quot;Anyone with the link can
-                view&quot;.
+                All changes made by Admin are reflected here in real-time.
               </CardContent>
             </Card>
           </div>

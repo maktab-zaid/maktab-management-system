@@ -8,32 +8,73 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { getAttendance, getStudents } from "@/lib/storage";
+import { useQuery } from "@tanstack/react-query";
 import { CalendarDays } from "lucide-react";
-import { useStudentByMobile } from "../../../hooks/useGoogleSheets";
 
 interface Props {
   mobileNumber: string;
 }
 
 export default function StudentAttendancePage({ mobileNumber }: Props) {
-  const { student, reports, isLoading } = useStudentByMobile(mobileNumber);
+  const { data: student, isLoading: studentLoading } = useQuery({
+    queryKey: ["student-by-mobile", mobileNumber],
+    queryFn: async () => {
+      try {
+        const all = await getStudents();
+        return (
+          all.find(
+            (s) =>
+              s.parentMobile.replace(/\D/g, "") ===
+              mobileNumber.replace(/\D/g, ""),
+          ) ?? null
+        );
+      } catch (e) {
+        console.error("[StudentAttendancePage] getStudents:", e);
+        return null;
+      }
+    },
+    enabled: !!mobileNumber,
+    staleTime: 30_000,
+  });
 
-  const totalPresent = reports.reduce(
-    (sum, r) => sum + (Number.parseInt(r.presentDays, 10) || 0),
-    0,
-  );
+  const { data: attendanceRecords = [], isLoading: attendanceLoading } =
+    useQuery({
+      queryKey: ["attendance", student?.id ?? ""],
+      queryFn: async () => {
+        if (!student?.id) return [];
+        try {
+          const all = await getAttendance();
+          return all.filter((a) => a.studentId === student.id);
+        } catch (e) {
+          console.error("[StudentAttendancePage] getAttendance:", e);
+          return [];
+        }
+      },
+      enabled: !!student?.id,
+      staleTime: 30_000,
+    });
+
+  const isLoading = studentLoading || attendanceLoading;
+
+  const presentCount = attendanceRecords.filter(
+    (r) => r.status === "present",
+  ).length;
+  const absentCount = attendanceRecords.filter(
+    (r) => r.status === "absent",
+  ).length;
 
   return (
     <div data-ocid="student.attendance.page" className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-foreground">My Attendance</h1>
         <p className="text-muted-foreground text-sm">
-          Attendance from Google Sheets
+          Attendance records
           <Badge
             variant="outline"
             className="ml-2 text-xs bg-primary/5 text-primary border-primary/20"
           >
-            Monthly Reports
+            Live Data
           </Badge>
         </p>
       </div>
@@ -46,29 +87,42 @@ export default function StudentAttendancePage({ mobileNumber }: Props) {
         </div>
       ) : (
         <>
-          {/* Summary card */}
-          {student?.attendance && (
-            <div className="bg-primary/5 rounded-xl border border-primary/20 p-4 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center text-white text-xl font-bold shrink-0">
-                {student.attendance}
+          {/* Summary */}
+          {attendanceRecords.length > 0 && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-success/10 rounded-xl border border-success/30 p-4 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-success flex items-center justify-center text-white text-lg font-bold shrink-0">
+                  {presentCount}
+                </div>
+                <div>
+                  <p className="font-semibold text-foreground text-sm">
+                    Present
+                  </p>
+                  <p className="text-xs text-muted-foreground">days</p>
+                </div>
               </div>
-              <div>
-                <p className="font-semibold text-foreground">Present Days</p>
-                <p className="text-sm text-muted-foreground">
-                  Current month attendance
-                </p>
+              <div className="bg-warning/10 rounded-xl border border-warning/30 p-4 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-warning flex items-center justify-center text-white text-lg font-bold shrink-0">
+                  {absentCount}
+                </div>
+                <div>
+                  <p className="font-semibold text-foreground text-sm">
+                    Absent
+                  </p>
+                  <p className="text-xs text-muted-foreground">days</p>
+                </div>
               </div>
             </div>
           )}
 
-          {reports.length === 0 ? (
+          {attendanceRecords.length === 0 ? (
             <div
               className="text-center py-16 bg-card rounded-xl border border-border"
               data-ocid="student.attendance.empty_state"
             >
               <CalendarDays className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
               <p className="text-muted-foreground">
-                No monthly reports found in Google Sheet
+                No attendance records found
               </p>
             </div>
           ) : (
@@ -76,66 +130,37 @@ export default function StudentAttendancePage({ mobileNumber }: Props) {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-primary/5">
-                    <TableHead className="font-semibold">Month</TableHead>
-                    <TableHead className="font-semibold">
-                      Present Days
-                    </TableHead>
-                    <TableHead className="font-semibold">Sabak</TableHead>
-                    <TableHead className="font-semibold">Akhlaq</TableHead>
-                    <TableHead className="font-semibold">Fees</TableHead>
+                    <TableHead className="font-semibold">Date</TableHead>
+                    <TableHead className="font-semibold">Status</TableHead>
+                    <TableHead className="font-semibold">Marked By</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {reports.map((r, i) => (
+                  {attendanceRecords.map((r, i) => (
                     <TableRow
-                      key={r.month || String(i)}
+                      key={r.id}
                       data-ocid={`student.attendance.day.${i + 1}`}
                     >
-                      <TableCell className="font-medium">
-                        {r.month || "—"}
-                      </TableCell>
+                      <TableCell className="font-medium">{r.date}</TableCell>
                       <TableCell>
                         <Badge
-                          className="bg-success/15 text-success-foreground border-success/30"
                           variant="outline"
+                          className={
+                            r.status === "present"
+                              ? "bg-success/15 text-success-foreground border-success/30"
+                              : "bg-warning/15 text-warning-foreground border-warning/30"
+                          }
                         >
-                          {r.presentDays || "0"} days
+                          {r.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-sm">
-                        {r.sabak || "—"}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {r.akhlaq || "—"}
-                      </TableCell>
-                      <TableCell>
-                        {r.feesStatus ? (
-                          <Badge
-                            variant="outline"
-                            className={`text-xs ${
-                              r.feesStatus.toLowerCase() === "paid"
-                                ? "bg-success/10 text-success-foreground border-success/30"
-                                : "bg-warning/10 text-warning-foreground border-warning/30"
-                            }`}
-                          >
-                            {r.feesStatus}
-                          </Badge>
-                        ) : (
-                          "—"
-                        )}
+                      <TableCell className="text-sm text-muted-foreground">
+                        {r.markedBy || "—"}
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
-              {totalPresent > 0 && (
-                <div className="px-4 py-3 border-t border-border bg-muted/30 text-sm text-muted-foreground">
-                  Total present days across all reports:{" "}
-                  <span className="font-semibold text-foreground">
-                    {totalPresent}
-                  </span>
-                </div>
-              )}
             </div>
           )}
         </>

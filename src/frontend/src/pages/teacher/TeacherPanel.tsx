@@ -22,10 +22,8 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
-import { useStudentsSheet } from "../../hooks/useGoogleSheets";
 import { getSession, getUnreadCount } from "../../lib/storage";
 import type { TeacherPage } from "../../types";
-import { normalizeMobile } from "../../utils/googleSheets";
 import AboutUsTeacherPage from "./pages/AboutUsTeacherPage";
 import AddStudentTeacherPage from "./pages/AddStudentTeacherPage";
 import MyStudentsPage from "./pages/MyStudentsPage";
@@ -147,17 +145,11 @@ export default function TeacherPanel({ onLogout, mobileNumber }: Props) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  const { data: sheetStudents = [] } = useStudentsSheet();
-  const normalizedMobile = normalizeMobile(mobileNumber);
-  const teacherRecord = sheetStudents.find(
-    (s) => normalizeMobile(s.mobile) === normalizedMobile,
-  );
-  const teacherName = teacherRecord?.name ?? "";
-  const teacherId = `teacher-mobile-${normalizedMobile}`;
-
-  // Get teacher's assigned time slot from session
+  // Get teacher name and time slot from session (set at login by App.tsx)
   const session = getSession();
+  const teacherName = session?.name ?? "";
   const teacherTimeSlot = session?.teacherTimeSlot;
+  const teacherId = `teacher-${teacherName.toLowerCase().replace(/\s+/g, "-")}`;
 
   useEffect(() => {
     getUnreadCount()
@@ -200,7 +192,7 @@ export default function TeacherPanel({ onLogout, mobileNumber }: Props) {
           <TimeSlotStudentsPage
             timeSlot="morning"
             onBack={() => navigate("my-students")}
-            ustaadName={teacherName || session?.name || "Ustaad"}
+            ustaadName={teacherName || "Ustaad"}
           />
         );
       case "afternoon":
@@ -208,7 +200,7 @@ export default function TeacherPanel({ onLogout, mobileNumber }: Props) {
           <TimeSlotStudentsPage
             timeSlot="afternoon"
             onBack={() => navigate("my-students")}
-            ustaadName={teacherName || session?.name || "Ustaad"}
+            ustaadName={teacherName || "Ustaad"}
           />
         );
       case "evening":
@@ -216,7 +208,7 @@ export default function TeacherPanel({ onLogout, mobileNumber }: Props) {
           <TimeSlotStudentsPage
             timeSlot="evening"
             onBack={() => navigate("my-students")}
-            ustaadName={teacherName || session?.name || "Ustaad"}
+            ustaadName={teacherName || "Ustaad"}
           />
         );
       case "attendance":
@@ -307,7 +299,9 @@ export default function TeacherPanel({ onLogout, mobileNumber }: Props) {
             <p className="text-white text-sm font-medium">
               {teacherName || "Teacher"}
             </p>
-            <p className="text-white/50 text-xs truncate">{mobileNumber}</p>
+            {mobileNumber && (
+              <p className="text-white/50 text-xs truncate">{mobileNumber}</p>
+            )}
           </div>
         </div>
 

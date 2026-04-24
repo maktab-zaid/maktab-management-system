@@ -1189,7 +1189,7 @@ function StudentReportSection() {
   const printRef = useRef<HTMLDivElement>(null);
 
   const student = students.find((s) => s.id === selectedStudentId);
-  const teacher = teachers.find((t) => t.id === student?.assignedTeacherId);
+  const teacher = teachers.find((t) => t.name === student?.teacherName);
 
   const { data: attendance = [], isLoading: attLoading } =
     useStudentAttendance(selectedStudentId);
@@ -1284,11 +1284,11 @@ function StudentReportSection() {
               {[
                 ["Name", student?.name],
                 ["Father Name", student?.fatherName],
-                ["Mobile", student?.mobileNumber],
-                ["Class", student?.className],
-                ["Teacher", teacher?.name ?? "—"],
-                ["Timing", student?.timing],
-                ["Monthly Fees", `Rs. ${Number(student?.monthlyFees ?? 0)}`],
+                ["Mobile", student?.parentMobile],
+                ["Class", student?.studentClass ?? student?.className],
+                ["Teacher", teacher?.name ?? student?.teacherName ?? "—"],
+                ["Timing", student?.timeSlot],
+                ["Monthly Fees", `Rs. ${Number(student?.fees ?? 0)}`],
                 ["Fee Status", student?.feesStatus],
               ].map(([label, value]) => (
                 <div key={label} className="flex gap-2">
@@ -1340,7 +1340,7 @@ function StudentReportSection() {
                     Current Sabak:{" "}
                   </span>
                   <span className="text-sm font-medium">
-                    {academic.currentSabak}
+                    {academic.currentLesson ?? academic.lessonName ?? "—"}
                   </span>
                 </div>
                 <div>
@@ -1348,7 +1348,7 @@ function StudentReportSection() {
                     Previous Sabak:{" "}
                   </span>
                   <span className="text-sm font-medium">
-                    {academic.previousSabak}
+                    {academic.previousLesson ?? "—"}
                   </span>
                 </div>
                 <div>
@@ -1356,14 +1356,18 @@ function StudentReportSection() {
                     Progress:{" "}
                   </span>
                   <span className="text-sm font-medium">
-                    {academic.monthlyProgress}
+                    {academic.progressPercent != null
+                      ? `${academic.progressPercent}%`
+                      : academic.progress != null
+                        ? `${academic.progress}%`
+                        : "—"}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-muted-foreground text-sm">
                     Akhlaq:{" "}
                   </span>
-                  <StarRow value={Number(academic.akhlaqRating)} />
+                  <StarRow value={0} />
                 </div>
               </div>
             </div>

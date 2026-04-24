@@ -10,7 +10,7 @@ import {
   getTeachers,
 } from "@/lib/storage";
 import { cn } from "@/lib/utils";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   BookOpen,
@@ -24,26 +24,33 @@ import {
   Users,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useState } from "react";
-import {
-  useAdminSheetStats,
-  useStudentsSheet,
-} from "../../../hooks/useGoogleSheets";
+import { useState } from "react";
 
 // ── Shift Overview Component ─────────────────────────────────────────────────
 
 function ShiftOverview() {
-  const [localStudents, setLocalStudents] = useState<Student[]>([]);
-  const [localTeachers, setLocalTeachers] = useState<Teacher[]>([]);
-
-  useEffect(() => {
-    getStudents()
-      .then(setLocalStudents)
-      .catch(() => setLocalStudents([]));
-    getTeachers()
-      .then(setLocalTeachers)
-      .catch(() => setLocalTeachers([]));
-  }, []);
+  const { data: localStudents = [] } = useQuery<Student[]>({
+    queryKey: ["students"],
+    queryFn: async () => {
+      try {
+        return await getStudents();
+      } catch {
+        return [];
+      }
+    },
+    staleTime: 30_000,
+  });
+  const { data: localTeachers = [] } = useQuery<Teacher[]>({
+    queryKey: ["teachers"],
+    queryFn: async () => {
+      try {
+        return await getTeachers();
+      } catch {
+        return [];
+      }
+    },
+    staleTime: 30_000,
+  });
 
   const shifts = [
     {
@@ -235,31 +242,54 @@ interface AdminDashboardProps {
 }
 
 export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
-  const {
-    totalStudents,
-    totalTeachers,
-    feesPaid,
-    feesPending,
-    classCounts,
-    teacherNames,
-    isLoading,
-  } = useAdminSheetStats();
-  const { data: students = [] } = useStudentsSheet();
   const queryClient = useQueryClient();
   const [timeSlotFilter, setTimeSlotFilter] = useState<TimeSlotFilter>("all");
-  const [localStudents, setLocalStudents] = useState<Student[]>([]);
-  const [localTeachers, setLocalTeachers] = useState<Teacher[]>([]);
 
-  useEffect(() => {
-    getStudents()
-      .then(setLocalStudents)
-      .catch(() => setLocalStudents([]));
-    getTeachers()
-      .then(setLocalTeachers)
-      .catch(() => setLocalTeachers([]));
-  }, []);
+  const { data: localStudents = [], isLoading: studentsLoading } = useQuery<
+    Student[]
+  >({
+    queryKey: ["students"],
+    queryFn: async () => {
+      try {
+        return await getStudents();
+      } catch {
+        return [];
+      }
+    },
+    staleTime: 30_000,
+  });
 
-  // Time slot breakdown counts
+  const { data: localTeachers = [], isLoading: teachersLoading } = useQuery<
+    Teacher[]
+  >({
+    queryKey: ["teachers"],
+    queryFn: async () => {
+      try {
+        return await getTeachers();
+      } catch {
+        return [];
+      }
+    },
+    staleTime: 30_000,
+  });
+
+  const isLoading = studentsLoading || teachersLoading;
+
+  const totalStudents = localStudents.length;
+  const totalTeachers = localTeachers.length;
+  const feesPaid = localStudents.filter((s) => s.feesStatus === "paid").length;
+  const feesPending = localStudents.filter(
+    (s) => s.feesStatus === "pending",
+  ).length;
+  const teacherNames = localTeachers.map((t) => t.name);
+
+  // Class counts
+  const classCounts: Record<string, number> = {};
+  for (const s of localStudents) {
+    const cls = s.studentClass ?? s.className ?? "";
+    if (cls) classCounts[cls] = (classCounts[cls] ?? 0) + 1;
+  }
+
   const morningCount = localStudents.filter(
     (s) => s.timeSlot === "morning",
   ).length;
@@ -304,8 +334,8 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
           size="sm"
           className="gap-2 text-primary border-primary/30 hover:bg-primary/5 shrink-0"
           onClick={() => {
-            queryClient.invalidateQueries({ queryKey: ["sheet-students"] });
-            queryClient.invalidateQueries({ queryKey: ["sheet-reports"] });
+            queryClient.invalidateQueries({ queryKey: ["students"] });
+            queryClient.invalidateQueries({ queryKey: ["teachers"] });
           }}
         >
           <RefreshCw className="w-3.5 h-3.5" />
@@ -522,7 +552,7 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
               </div>
             ) : allClasses.length === 0 ? (
               <p className="text-muted-foreground text-sm">
-                No class data in Google Sheet yet
+                No students added yet
               </p>
             ) : (
               <div className="space-y-2">
@@ -572,13 +602,13 @@ export default function AdminDashboard({ onNavigate }: AdminDashboardProps) {
               </div>
             ) : teacherNames.length === 0 ? (
               <p className="text-muted-foreground text-sm">
-                No teacher data in Google Sheet yet
+                No teachers added yet
               </p>
             ) : (
               <div className="space-y-3">
                 {teacherNames.slice(0, 6).map((name, i) => {
-                  const count = students.filter(
-                    (s) => s.teacher.toLowerCase() === name.toLowerCase(),
+                  const count = localStudents.filter(
+                    (s) => s.teacherName.toLowerCase() === name.toLowerCase(),
                   ).length;
                   const lt = localTeachers.find(
                     (t) => t.name.toLowerCase() === name.toLowerCase(),

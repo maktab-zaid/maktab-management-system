@@ -1,8 +1,9 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getStudents } from "@/lib/storage";
+import { useQuery } from "@tanstack/react-query";
 import { BookOpen, Clock, GraduationCap, User } from "lucide-react";
-import { useStudentByMobile } from "../../../hooks/useGoogleSheets";
 
 interface Props {
   mobileNumber: string;
@@ -33,7 +34,26 @@ function InfoRow({
 }
 
 export default function StudentProfilePage({ mobileNumber }: Props) {
-  const { student, isLoading } = useStudentByMobile(mobileNumber);
+  const { data: student, isLoading } = useQuery({
+    queryKey: ["student-by-mobile", mobileNumber],
+    queryFn: async () => {
+      try {
+        const all = await getStudents();
+        return (
+          all.find(
+            (s) =>
+              s.parentMobile.replace(/\D/g, "") ===
+              mobileNumber.replace(/\D/g, ""),
+          ) ?? null
+        );
+      } catch (e) {
+        console.error("[StudentProfilePage] getStudents:", e);
+        return null;
+      }
+    },
+    enabled: !!mobileNumber,
+    staleTime: 30_000,
+  });
 
   if (isLoading) {
     return (
@@ -76,7 +96,7 @@ export default function StudentProfilePage({ mobileNumber }: Props) {
             variant="outline"
             className="ml-2 text-xs bg-primary/5 text-primary border-primary/20"
           >
-            Google Sheets
+            Live Data
           </Badge>
         </p>
       </div>
@@ -103,43 +123,42 @@ export default function StudentProfilePage({ mobileNumber }: Props) {
             <InfoRow
               icon={<GraduationCap className="w-4 h-4" />}
               label="Class"
-              value={student.className}
+              value={student.studentClass ?? student.className ?? ""}
             />
             <InfoRow
               icon={<User className="w-4 h-4" />}
               label="Teacher"
-              value={student.teacher}
+              value={student.teacherName}
             />
             <InfoRow
               icon={<Clock className="w-4 h-4" />}
               label="Timing"
-              value={student.timing}
+              value={student.timeSlot}
             />
             <InfoRow
               icon={<BookOpen className="w-4 h-4" />}
-              label="Current Sabak"
-              value={student.currentSabak}
+              label="Roll No."
+              value={student.rollNumber ?? ""}
             />
             <InfoRow
               icon={<span className="text-xs font-bold">#</span>}
-              label="Attendance"
-              value={student.attendance ? `${student.attendance} days` : ""}
+              label="Admission"
+              value={student.admissionDate ?? ""}
             />
             <div className="flex items-center gap-3 py-2 border-b border-border last:border-0">
               <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                <span className="text-xs font-bold">Rs</span>
+                <span className="text-xs font-bold">₹</span>
               </div>
               <span className="text-sm text-muted-foreground w-24 shrink-0">
                 Monthly Fees
               </span>
               <span className="text-sm font-medium text-foreground">
-                {student.monthlyFees ? `Rs. ${student.monthlyFees}` : "—"}
+                {student.fees ? `₹${student.fees}` : "—"}
               </span>
               {student.feesStatus && (
                 <Badge
                   className={`ml-auto text-xs ${
-                    student.feesStatus.toLowerCase() === "paid" ||
-                    student.feesStatus.toLowerCase() === "active"
+                    student.feesStatus === "paid"
                       ? "bg-success/10 text-success-foreground border-success/30"
                       : "bg-warning/10 text-warning-foreground border-warning/30"
                   }`}
@@ -149,13 +168,6 @@ export default function StudentProfilePage({ mobileNumber }: Props) {
                 </Badge>
               )}
             </div>
-            {student.akhlaq && (
-              <InfoRow
-                icon={<span className="text-xs">★</span>}
-                label="Akhlaq"
-                value={student.akhlaq}
-              />
-            )}
           </div>
         </CardContent>
       </Card>

@@ -125,6 +125,7 @@ export default function App() {
 }
 
 function AppInner() {
+  console.log("App loaded");
   const [session, setSession] = useState<Session | null>(() => getSession());
   const [activePage, setActivePage] = useState<AppPage>("dashboard");
 

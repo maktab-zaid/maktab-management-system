@@ -23,7 +23,8 @@ import {
   getSalaries,
   getTeachers,
   saveSalaries,
-  saveTeachers,
+  addTeacher as supabaseAddTeacher,
+  deleteTeacher as supabaseDeleteTeacher,
 } from "@/lib/storage";
 import {
   CheckCircle,
@@ -112,9 +113,16 @@ export default function ManageTeachersPage() {
 
   // Load from Supabase on mount
   useEffect(() => {
+    console.log("Fetching teachers...");
     getTeachers()
-      .then(setTeachers)
-      .catch(() => setTeachers([]));
+      .then((data) => {
+        console.log("Teachers data:", data);
+        setTeachers(data);
+      })
+      .catch((e) => {
+        console.error("[ManageTeachersPage] Failed to fetch teachers:", e);
+        setTeachers([]);
+      });
     getSalaries()
       .then(setSalaries)
       .catch(() => setSalaries([]));
@@ -153,19 +161,15 @@ export default function ManageTeachersPage() {
 
   const handleAddTeacher = async () => {
     if (!newTeacher.name.trim() || !newTeacher.timeSlot) return;
-    const teacher: Teacher = {
-      id: createId(),
-      name: newTeacher.name.trim(),
-      mobile: newTeacher.mobile.trim(),
-      className: newTeacher.timeSlot,
-      timeSlot: newTeacher.timeSlot.toLowerCase() as
-        | "morning"
-        | "afternoon"
-        | "evening",
-    };
-    const updated = [...teachers, teacher];
-    await saveTeachers(updated);
-    setTeachers(updated);
+    const result = await supabaseAddTeacher(
+      newTeacher.name.trim(),
+      newTeacher.mobile.trim(),
+      newTeacher.timeSlot,
+    );
+    if (result !== null) {
+      const updated = await getTeachers();
+      setTeachers(updated);
+    }
     setNewTeacher({ name: "", mobile: "", timeSlot: "" });
     setAddTeacherOpen(false);
   };
@@ -184,17 +188,44 @@ export default function ManageTeachersPage() {
           }
         : t,
     );
-    await saveTeachers(updated);
-    setTeachers(updated);
+    // Re-insert the updated teacher via upsert (addTeacher uses insert, so use supabase upsert directly via saveTeachers)
+    try {
+      const { supabase } = await import("@/lib/supabase");
+      if (supabase) {
+        const updated_teacher = updated.find(
+          (t) => t.id === editClassTeacher.id,
+        );
+        if (updated_teacher) {
+          const { error } = await supabase
+            .from("teachers")
+            .update({
+              time_slot: editTimeSlot.toLowerCase(),
+              class_name: editTimeSlot,
+            })
+            .eq("id", editClassTeacher.id);
+          if (error) console.error("[ManageTeachersPage] editClass:", error);
+        }
+      }
+      const refreshed = await getTeachers();
+      setTeachers(refreshed);
+    } catch (e) {
+      console.error("[ManageTeachersPage] editClass failed:", e);
+      setTeachers(updated);
+    }
     setEditClassTeacher(null);
     setEditTimeSlot("");
   };
 
   const handleDeleteTeacher = async () => {
     if (!deleteTeacher) return;
-    const updated = teachers.filter((t) => t.id !== deleteTeacher.id);
-    await saveTeachers(updated);
-    setTeachers(updated);
+    try {
+      await supabaseDeleteTeacher(deleteTeacher.id);
+      const refreshed = await getTeachers();
+      setTeachers(refreshed);
+    } catch (e) {
+      console.error("[ManageTeachersPage] deleteTeacher failed:", e);
+      setTeachers((prev) => prev.filter((t) => t.id !== deleteTeacher.id));
+    }
     setDeleteTeacher(null);
   };
 

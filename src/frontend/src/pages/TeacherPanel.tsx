@@ -10,7 +10,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { APPS_SCRIPT_URL, addReport, getStudents } from "@/lib/api";
+import {
+  type SabakRecord,
+  createId,
+  getStudents,
+  saveSabakRecords,
+} from "@/lib/storage";
 import { ArrowLeft, BookOpen, Loader2, Send } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -25,6 +30,7 @@ export default function TeacherPanel({ onBack }: TeacherPanelProps) {
   const [studentsError, setStudentsError] = useState(false);
 
   const [selectedStudent, setSelectedStudent] = useState("");
+  const [selectedStudentId, setSelectedStudentId] = useState("");
   const [attendance, setAttendance] = useState("");
   const [sabak, setSabak] = useState("");
   const [akhlaq, setAkhlaq] = useState("Good");
@@ -34,16 +40,11 @@ export default function TeacherPanel({ onBack }: TeacherPanelProps) {
   const loadStudents = useCallback(async () => {
     setStudentsLoading(true);
     setStudentsError(false);
-    const timer = setTimeout(() => {
-      setStudentsLoading(false);
-      setStudentsError(true);
-    }, 2000);
     try {
       const rows = await getStudents();
-      clearTimeout(timer);
-      setStudentNames(rows.map((s) => s.Name).filter(Boolean));
-    } catch {
-      clearTimeout(timer);
+      setStudentNames(rows.map((s) => s.name).filter(Boolean));
+    } catch (e) {
+      console.error("[TeacherPanel] loadStudents:", e);
       setStudentsError(true);
     } finally {
       setStudentsLoading(false);
@@ -53,6 +54,17 @@ export default function TeacherPanel({ onBack }: TeacherPanelProps) {
   useEffect(() => {
     loadStudents();
   }, [loadStudents]);
+
+  const handleStudentSelect = async (name: string) => {
+    setSelectedStudent(name);
+    try {
+      const rows = await getStudents();
+      const found = rows.find((s) => s.name === name);
+      setSelectedStudentId(found?.id ?? "");
+    } catch {
+      setSelectedStudentId("");
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,15 +79,19 @@ export default function TeacherPanel({ onBack }: TeacherPanelProps) {
 
     setSubmitting(true);
     try {
-      await addReport({
+      const record: SabakRecord = {
+        id: createId(),
+        studentId: selectedStudentId,
         studentName: selectedStudent,
-        attendance,
-        sabak,
-        akhlaq,
-        fees: feesStatus,
-        date: new Date().toLocaleDateString("en-IN"),
-      });
+        remarks: `Akhlaq: ${akhlaq} | Fees: ${feesStatus}`,
+        updatedBy: "Teacher",
+        updatedAt: new Date().toISOString(),
+        lessonName: sabak,
+        progress: Number(attendance) || 0,
+      };
+      await saveSabakRecords([record]);
       setSelectedStudent("");
+      setSelectedStudentId("");
       setAttendance("");
       setSabak("");
       setAkhlaq("Good");
@@ -111,16 +127,6 @@ export default function TeacherPanel({ onBack }: TeacherPanelProps) {
       </div>
 
       <div className="max-w-lg mx-auto px-4 py-6">
-        {!APPS_SCRIPT_URL && (
-          <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-            ⚙️ Setup required: Paste your Apps Script Web App URL in{" "}
-            <code className="font-mono text-xs bg-amber-100 px-1 rounded">
-              src/frontend/src/lib/api.ts
-            </code>{" "}
-            to enable live data sync.
-          </div>
-        )}
-
         <Card className="shadow-card border-0 overflow-hidden">
           <div className="gold-shimmer" />
           <CardHeader>
@@ -145,7 +151,7 @@ export default function TeacherPanel({ onBack }: TeacherPanelProps) {
                 ) : (
                   <Select
                     value={selectedStudent}
-                    onValueChange={setSelectedStudent}
+                    onValueChange={handleStudentSelect}
                   >
                     <SelectTrigger
                       data-ocid="teacher.student.select"
@@ -155,7 +161,7 @@ export default function TeacherPanel({ onBack }: TeacherPanelProps) {
                       <SelectValue
                         placeholder={
                           studentsError
-                            ? "Sheet unavailable — type name below"
+                            ? "Could not load students — type name below"
                             : studentNames.length === 0
                               ? "No students found"
                               : "Choose a student"
@@ -173,7 +179,7 @@ export default function TeacherPanel({ onBack }: TeacherPanelProps) {
                 )}
                 {studentsError && (
                   <p className="text-xs text-amber-600 mt-1">
-                    ⚠️ Could not load from Google Sheets
+                    ⚠️ Could not load students from Supabase
                   </p>
                 )}
                 {(studentsError || studentNames.length === 0) && (

@@ -2,22 +2,43 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getStudents } from "@/lib/storage";
+import { useQuery } from "@tanstack/react-query";
 import { GraduationCap, Search } from "lucide-react";
 import { useState } from "react";
-import { useTeacherStudents } from "../../../hooks/useGoogleSheets";
 
 interface Props {
   teacherName: string;
 }
 
 export default function StaffStudentsPage({ teacherName }: Props) {
-  const { data: students = [], isLoading } = useTeacherStudents(teacherName);
+  const { data: allStudents = [], isLoading } = useQuery({
+    queryKey: ["students"],
+    queryFn: async () => {
+      try {
+        return await getStudents();
+      } catch (e) {
+        console.error("[StaffStudentsPage] getStudents:", e);
+        return [];
+      }
+    },
+    staleTime: 30_000,
+  });
+
+  const students = teacherName
+    ? allStudents.filter(
+        (s) =>
+          s.teacherName.toLowerCase().trim() ===
+          teacherName.toLowerCase().trim(),
+      )
+    : allStudents;
+
   const [search, setSearch] = useState("");
 
   const filtered = students.filter(
     (s) =>
       s.name.toLowerCase().includes(search.toLowerCase()) ||
-      s.mobile.includes(search),
+      s.parentMobile.includes(search),
   );
 
   return (
@@ -35,7 +56,7 @@ export default function StaffStudentsPage({ teacherName }: Props) {
                   variant="outline"
                   className="text-xs bg-primary/5 text-primary border-primary/20"
                 >
-                  {students.length} from Google Sheets
+                  {students.length} from Supabase
                 </Badge>
               </span>
             )}
@@ -74,12 +95,12 @@ export default function StaffStudentsPage({ teacherName }: Props) {
             {search
               ? "No students match your search"
               : teacherName
-                ? `No students assigned to ${teacherName} in Google Sheet`
-                : "No students found in Google Sheet"}
+                ? `No students assigned to ${teacherName}`
+                : "No students found"}
           </p>
           {!search && (
             <p className="text-xs text-muted-foreground mt-1">
-              Make sure your name matches exactly in the Teacher column
+              Ask Admin to add students to your session
             </p>
           )}
         </div>
@@ -87,7 +108,7 @@ export default function StaffStudentsPage({ teacherName }: Props) {
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((s, i) => (
             <Card
-              key={`${s.mobile}-${i}`}
+              key={s.id}
               data-ocid={`staff.students.item.${i + 1}`}
               className="shadow-card hover:shadow-card-hover transition-shadow"
             >
@@ -104,43 +125,27 @@ export default function StaffStudentsPage({ teacherName }: Props) {
                       {s.fatherName || ""}
                     </p>
                     <div className="flex flex-wrap gap-1.5 mt-2">
-                      {s.className && (
+                      {(s.studentClass ?? s.className) && (
                         <Badge variant="outline" className="text-xs">
-                          {s.className}
+                          {s.studentClass ?? s.className}
+                        </Badge>
+                      )}
+                      {s.timeSlot && (
+                        <Badge variant="outline" className="text-xs">
+                          {s.timeSlot}
                         </Badge>
                       )}
                       {s.feesStatus && (
                         <Badge
                           variant="outline"
                           className={`text-xs ${
-                            s.feesStatus.toLowerCase() === "paid" ||
-                            s.feesStatus.toLowerCase() === "active"
+                            s.feesStatus === "paid"
                               ? "bg-success/10 text-success-foreground border-success/30"
                               : "bg-warning/10 text-warning-foreground border-warning/30"
                           }`}
                         >
                           {s.feesStatus}
                         </Badge>
-                      )}
-                    </div>
-                    <div className="mt-2 space-y-0.5">
-                      {s.currentSabak && (
-                        <p className="text-xs text-muted-foreground">
-                          <span className="font-medium">Sabak:</span>{" "}
-                          {s.currentSabak}
-                        </p>
-                      )}
-                      {s.attendance && (
-                        <p className="text-xs text-muted-foreground">
-                          <span className="font-medium">Attendance:</span>{" "}
-                          {s.attendance}
-                        </p>
-                      )}
-                      {s.akhlaq && (
-                        <p className="text-xs text-muted-foreground">
-                          <span className="font-medium">Akhlaq:</span>{" "}
-                          {s.akhlaq}
-                        </p>
                       )}
                     </div>
                   </div>
